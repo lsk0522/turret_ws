@@ -1,0 +1,560 @@
+﻿=== detector.py ===
+import cv2
+import threading
+import numpy as np
+import time
+
+import state
+
+# 학습 영역: 640x480 프레임 중앙 300x300
+LEARN_ZONE = (170, 90, 300, 300)   # (x, y, w, h)
+
+
+# ── 헬퍼: 피부색 마스크 (YCrCb — 조명 변화에 강함) ──────
+def _skin_mask(img):
+    """피부색 픽셀 = 255, 그 외 = 0. 손을 제거하기 위해 사용."""
+    ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+    mask = cv2.inRange(ycrcb, (0, 133, 77), (255, 173, 127))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    return cv2.dilate(mask, kernel, iterations=2)   # 여유 있게 확장
+
+
+# ── 헬퍼: 프레임 차분 모션 마스크 ────────────────────────
+def _motion_mask(frame, prev_frame):
+    diff = cv2.absdiff(
+        cv2.cvtColor(frame,      cv2.COLOR_BGR2GRAY),
+        cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY),
+    )
+    _, mask = cv2.threshold(diff, 15, 255, cv2.THRESH_BINARY)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    return cv2.dilate(mask, kernel, iterations=2)
+
+
+# ── 칼만 필터 ────────────────────────────────────────────
+class KalmanTracker:
+    def __init__(self):
+        self.kf = cv2.KalmanFilter(4, 2)
+        self.kf.measurementMatrix = np.array([
+            [1, 0, 0, 0], [0, 1, 0, 0]], np.float32)
+        self.kf.transitionMatrix = np.array([
+            [1, 0, 1, 0], [0, 1, 0, 1],
+            [0, 0, 1, 0], [0, 0, 0, 1]], np.float32)
+        self.kf.processNoiseCov     = np.eye(4, dtype=np.float32) * 5.0
+        self.kf.measurementNoiseCov = np.eye(2, dtype=np.float32) * 1.0
+        self.kf.errorCovPost        = np.eye(4, dtype=np.float32) * 10.0
+        self.initialized = False
+        self.lost = 0
+        self.MAX_LOST = 20
+
+    def update(self, cx, cy):
+        m = np.array([[np.float32(cx)], [np.float32(cy)]])
+        if not self.initialized:
+            self.kf.statePost = np.array(
+                [[np.float32(cx)], [np.float32(cy)], [0.0], [0.0]], np.float32)
+            self.initialized = True
+        self.kf.correct(m)
+        self.lost = 0
+        p = self.kf.predict()
+        return int(p[0]), int(p[1])
+
+    def predict_next(self):
+        if not self.initialized:
+            return None
+        self.lost += 1
+        if self.lost > self.MAX_LOST:
+            self.initialized = False
+            return None
+        p = self.kf.predict()
+        return int(p[0]), int(p[1])
+
+    def reset(self):
+        self.initialized = False
+        self.lost = 0
+
+
+# ── ORB 멀티뷰 트래커 (손 제외) ──────────────────────────
+class ORBTracker:
+    LEARN_SEC     = 4.0
+    SAMPLE_EVERY  = 2
+    MAX_TRAIN_DES = 8000
+    MIN_MATCHES   = 8
+
+    def __init__(self):
+        self.orb = cv2.ORB_create(nfeatures=400, scaleFactor=1.2,
+                                   nlevels=8, edgeThreshold=15)
+        self.matcher   = None
+        self.train_des = None
+        self.active    = False
+        self.learning  = False
+        self._start: float = 0.0
+        self._buf      = []
+        self._cnt      = 0
+
+    @property
+    def progress(self):
+        if not self.learning:
+            return 100 if self.active else 0
+        return min(99, int((time.time() - self._start) / self.LEARN_SEC * 100))
+
+    def start_learning(self):
+        self.active    = False
+        self.learning  = True
+        self.train_des = None
+        self.matcher   = None
+        self._buf      = []
+        self._start    = time.time()
+        self._cnt      = 0
+
+    def process_frame(self, frame, prev_frame=None):
+        """학습 중 호출 — 피부 + 정적 배경 제외 후 특징 수집"""
+        if not self.learning:
+            return
+
+        self._cnt += 1
+        if self._cnt % self.SAMPLE_EVERY != 0:
+            return
+
+        x, y, w, h = LEARN_ZONE
+        roi = frame[y:y + h, x:x + w]
+
+        # 1) 피부색 제거
+        skin    = _skin_mask(roi)
+        no_skin = cv2.bitwise_not(skin)
+
+        # 2) 움직이는 영역만 (이전 프레임 있으면)
+        if prev_frame is not None:
+            prev_roi = prev_frame[y:y + h, x:x + w]
+            diff = cv2.absdiff(
+                cv2.cvtColor(roi,      cv2.COLOR_BGR2GRAY),
+                cv2.cvtColor(prev_roi, cv2.COLOR_BGR2GRAY),
+            )
+            _, motion = cv2.threshold(diff, 12, 255, cv2.THRESH_BINARY)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+            motion = cv2.dilate(motion, kernel, iterations=2)
+            # 피부 제외 + 움직임 교집합 = 손이 아닌 움직이는 물체
+            obj_mask = cv2.bitwise_and(no_skin, motion)
+            # 교집합이 너무 작으면 피부 제외만 사용 (물체가 잠시 멈춘 경우)
+            if cv2.countNonZero(obj_mask) < 80:
+                obj_mask = no_skin
+        else:
+            obj_mask = no_skin
+
+        _, des = self.orb.detectAndCompute(roi, obj_mask)
+        if des is not None and len(des) >= 5:
+            self._buf.append(des)
+
+        if time.time() - self._start >= self.LEARN_SEC:
+            self._finish()
+
+    def _finish(self):
+        self.learning = False
+        if not self._buf:
+            return
+        all_des = np.vstack(self._buf)
+        if len(all_des) > self.MAX_TRAIN_DES:
+            idx = np.random.choice(len(all_des), self.MAX_TRAIN_DES, replace=False)
+            all_des = all_des[idx]
+        self.train_des = all_des
+        # FLANN (LSH for binary descriptors)
+        idx_p = dict(algorithm=6, table_number=6, key_size=12, multi_probe_level=1)
+        self.matcher = cv2.FlannBasedMatcher(idx_p, {"checks": 50})
+        self.matcher.add([all_des])
+        self.matcher.train()
+        self.active = True
+
+    def track(self, frame, motion=None):
+        if not self.active or self.matcher is None:
+            return None
+
+        # 모션 영역 우선 탐색 → 특징점 부족하면 전체 프레임
+        kp, des = self.orb.detectAndCompute(frame, motion)
+        if des is None or len(des) < 10:
+            kp, des = self.orb.detectAndCompute(frame, None)
+        if des is None or len(des) < 5:
+            return None
+
+        try:
+            pairs = self.matcher.knnMatch(des, k=2)
+        except Exception:
+            return None
+
+        good = []
+        for pair in pairs:
+            if len(pair) == 2:
+                m, n = pair
+                if m.distance < 0.75 * n.distance:
+                    good.append(m)
+
+        if len(good) < self.MIN_MATCHES:
+            return None
+
+        pts = np.array([kp[m.queryIdx].pt for m in good], np.float32)
+        x, y, w, h = cv2.boundingRect(pts.reshape(-1, 1, 2).astype(np.int32))
+        pad = 12
+        x = max(0, x - pad); y = max(0, y - pad)
+        w = min(639 - x, w + 2 * pad)
+        h = min(479 - y, h + 2 * pad)
+        return {"cx": x + w // 2, "cy": y + h // 2,
+                "x": x, "y": y, "w": w, "h": h,
+                "matches": len(good), "predicted": False}
+
+    def reset(self):
+        self.active    = False
+        self.learning  = False
+        self.train_des = None
+        self.matcher   = None
+        self._buf      = []
+
+
+# ── Hough Circle 폴백 (흰 공 등 원형 물체) ────────────────
+class CircleDetector:
+    """ORB 실패 시 폴백. 형태만 보므로 흰 공 ↔ 흰 배경도 감지 가능."""
+
+    def detect(self, frame, motion=None):
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        # 모션 영역만 사용 (배경 원형 노이즈 방지)
+        search = gray
+        if motion is not None and cv2.countNonZero(motion) > 200:
+            search = cv2.bitwise_and(gray, gray, mask=motion)
+
+        blurred = cv2.GaussianBlur(search, (9, 9), 2)
+
+        circles = cv2.HoughCircles(
+            blurred,
+            cv2.HOUGH_GRADIENT,
+            dp=1, minDist=40,
+            param1=60, param2=18,
+            minRadius=12, maxRadius=130,
+        )
+        if circles is None:
+            return None
+
+        circles = np.round(circles[0]).astype(int)
+
+        # 피부색 중심 원 제외 (손가락 끝 등)
+        skin = _skin_mask(frame)
+        best = None
+        best_r = 0
+        for cx, cy, r in circles:
+            if 0 <= cy < frame.shape[0] and 0 <= cx < frame.shape[1]:
+                if skin[cy, cx]:      # 중심이 피부색 → 손 가능성, 스킵
+                    continue
+                if r > best_r:
+                    best_r = r
+                    best = (cx, cy, r)
+
+        if best is None:
+            return None
+
+        cx, cy, r = best
+        return {
+            "cx": int(cx), "cy": int(cy),
+            "x": int(cx - r), "y": int(cy - r),
+            "w": int(2 * r), "h": int(2 * r),
+            "predicted": False,
+            "detector": "hough",
+        }
+
+
+# ── 모듈 인스턴스 ────────────────────────────────────────
+_orb    = ORBTracker()
+_circle = CircleDetector()
+_kalman = KalmanTracker()
+_thread = None
+
+
+def start_learning():
+    _orb.start_learning()
+    _kalman.reset()
+    state.ball = None
+    state.ball_lost = False
+    state.learning_progress = 0
+
+
+def get_learning_progress():
+    return _orb.progress
+
+
+def reset_tracker():
+    _orb.reset()
+    _kalman.reset()
+    state.ball = None
+    state.ball_lost = False
+    state.learning_progress = 0
+
+
+# ── 메인 루프 ────────────────────────────────────────────
+def _run():
+    last_id    = None
+    prev_frame = None
+
+    while True:
+        frame = state.current_frame
+        if frame is None:
+            time.sleep(0.01)
+            continue
+
+        frame_id = id(frame)
+        if frame_id == last_id:
+            time.sleep(0.005)
+            continue
+        last_id = frame_id
+
+        # ── 학습 중 ─────────────────────────────────────
+        if _orb.learning:
+            _orb.process_frame(frame, prev_frame)
+            state.learning_progress = _orb.progress
+            prev_frame = frame.copy()
+            continue
+
+        # ── 추적 ────────────────────────────────────────
+        motion = _motion_mask(frame, prev_frame) if prev_frame is not None else None
+        prev_frame = frame.copy()
+
+        ball = None
+
+        # 1) ORB 특징점 매칭
+        if _orb.active:
+            ball = _orb.track(frame, motion)
+
+        # 2) ORB 실패 → Hough Circle (흰 공 등 원형 물체 대응)
+        if ball is None and motion is not None:
+            ball = _circle.detect(frame, motion)
+
+        # ── 칼만 갱신 ────────────────────────────────────
+        if ball:
+            px, py = _kalman.update(ball["cx"], ball["cy"])
+            ball["predicted_cx"] = px
+            ball["predicted_cy"] = py
+            state.ball      = ball
+            state.ball_lost = False
+        elif _orb.active:
+            pred = _kalman.predict_next()
+            state.ball_lost = True
+            state.ball = (
+                {"cx": pred[0], "cy": pred[1], "predicted": True}
+                if pred else None
+            )
+        else:
+            state.ball      = None
+            state.ball_lost = False
+
+        # ── 자동 모드: 조준점 갱신 ───────────────────────
+        if state.control_mode == "auto" and state.ball:
+            tx = state.ball.get("predicted_cx", state.ball["cx"])
+            ty = state.ball.get("predicted_cy", state.ball["cy"])
+            state.point[0] = max(0, min(639, tx))
+            state.point[1] = max(0, min(479, ty))
+
+
+def start():
+    global _thread
+    _thread = threading.Thread(target=_run, daemon=True)
+    _thread.start()
+
+
+=== index.html 끝부분 100줄 ===
+            <div id="gallery-header" class="ios-modal-header">
+                <span>미디어 라이브러리</span>
+                <button id="close-gallery" class="close-icon-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div id="gallery-content">
+                <div id="gallery-viewer">
+                    <button id="gallery-prev" class="gallery-nav-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    </button>
+                    <div class="gallery-img-container">
+                        <img id="gallery-active-img" src="" alt="Captured frame">
+                        <div id="gallery-img-info">데이터 없음</div>
+                    </div>
+                    <button id="gallery-next" class="gallery-nav-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </button>
+                </div>
+                
+                <div id="gallery-thumbnails-wrap">
+                    <div id="gallery-thumbnails-list"></div>
+                </div>
+
+                <div class="gallery-actions">
+                    <a id="gallery-download" href="#" download class="ios-action-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; margin-right: 6px;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>다운로드
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 학습 모드 오버레이 (드래그 제거, 고정 zone) -->
+    <div id="learn-overlay">
+        <div id="learn-banner">
+            <span id="learn-banner-text">물건을 이 영역 안에 두고 천천히 360° 돌려주세요</span>
+        </div>
+        <div id="learn-progress-wrap">
+            <div id="learn-progress-bar">
+                <div id="learn-progress-fill"></div>
+            </div>
+            <span id="learn-progress-pct">0%</span>
+        </div>
+        <button id="btn-cancel-learn">취소</button>
+    </div>
+
+    <!-- 카메라 스트림 비디오 -->
+    <img src="/video" id="video" alt="Camera Stream">
+
+    <!-- 조준점 오버레이 -->
+    <canvas id="overlay"></canvas>
+
+    <!-- 조이스틱 제어판 (좌측 하단 배치) -->
+    <div id="joystick-base">
+        <div id="joystick-stick"></div>
+    </div>
+
+    <!-- Apple 스타일 하단 컨트롤 바 (우측/하단 결합) -->
+    <div id="bottom-controls">
+        <!-- 갤러리 썸네일 버튼 (좌측) -->
+        <button id="gallery-btn" class="control-circle" aria-label="Open Gallery">
+            <img id="gallery-thumb" src="" alt="Last capture" style="display:none;">
+            <div id="gallery-empty-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+            </div>
+        </button>
+
+        <!-- 셔터 캡처 버튼 (중앙) -->
+        <button id="btn-capture" class="shutter-btn" aria-label="Capture Photo">
+            <span class="shutter-inner"></span>
+        </button>
+
+        <!-- 좌우 반전 버튼 (우측) -->
+        <button id="btn-flip" class="control-circle" aria-label="Flip Camera">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 1l4 4-4 4"></path>
+                <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                <path d="M7 23l-4-4 4-4"></path>
+                <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+            </svg>
+        </button>
+    </div>
+
+</div>
+
+<script src="/static/script.js"></script>
+</body>
+</html>
+
+=== script.js 첫 100줄 ===
+/* ==========================================
+   Apple Premium Script for Turret Controller
+   ========================================== */
+
+window.addEventListener("load", () => {
+    setTimeout(() => {
+        window.scrollTo(0, 1);
+    }, 100);
+    // 첫 로드 시 갤러리 리스트 불러오기
+    updateGallery();
+});
+
+const img    = document.getElementById("video");
+const canvas = document.getElementById("overlay");
+const ctx    = canvas.getContext("2d");
+const wrap   = document.getElementById("wrap");
+
+canvas.width  = 640;
+canvas.height = 480;
+
+let BASE_R;
+let STICK_R;
+
+function resize(){
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let w;
+    let h;
+
+    /* 원래 4:3 비율 유지 */
+    if (vw / vh > 4 / 3) {
+        h = vh;
+        w = vh * 4 / 3;
+    } else {
+        w = vw;
+        h = vw * 3 / 4;
+    }
+
+    wrap.style.width  = w + "px";
+    wrap.style.height = h + "px";
+
+    const s = Math.min(w, h);
+
+    // 조이스틱 및 컨트롤 버튼 크기 동적 조절
+    BASE_R  = Math.round(s * 0.12);
+    STICK_R = Math.round(s * 0.05);
+
+    const base  = document.getElementById("joystick-base");
+    const stick = document.getElementById("joystick-stick");
+
+    base.style.width  = BASE_R * 2 + "px";
+    base.style.height = BASE_R * 2 + "px";
+
+    stick.style.width  = STICK_R * 2 + "px";
+    stick.style.height = STICK_R * 2 + "px";
+
+    stick.style.left = BASE_R + "px";
+    stick.style.top  = BASE_R + "px";
+}
+
+resize();
+window.addEventListener("resize", resize);
+
+let px  = 320;   // 렌더링 위치 (lerp 적용)
+let py  = 240;
+let tPx = 320;   // 목표 위치 (서버 / 조이스틱이 설정)
+let tPy = 240;
+let maxSpeed = 6;
+
+/* manual | auto */
+let controlMode = "manual";
+
+let joyVx = 0;
+let joyVy = 0;
+let joystickTouchId = null;
+
+/* 학습 모드 상태 — drawCrosshair에서 참조하므로 loop() 전에 선언 */
+let learningMode    = false;
+let learningProgress = 0;
+
+/* ==========================================
+   Apple 시네마틱 크로스헤어 — 코너 브래킷 + 중심 도트
+   ========================================== */
+function drawCrosshair(){
+    ctx.clearRect(0, 0, 640, 480);
+
+    // 수동: Apple Red, 자동: Apple Green
+    const color = (controlMode === "auto") ? "#30D158" : "#FF3B30";
+
+    ctx.save();
+
+    // 학습 모드 중에는 조준점(도트·링·브래킷) 전부 숨김
+    if (!learningMode) {
+
+        // ── 중심 도트 ──────────────────────────
+        ctx.shadowBlur  = 10;
+        ctx.shadowColor = color;
+        ctx.fillStyle   = color;
+        ctx.beginPath();
+

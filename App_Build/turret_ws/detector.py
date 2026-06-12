@@ -1,0 +1,436 @@
+import cv2
+import threading
+import numpy as np
+import time
+
+import state
+
+# 학습 영역: 640x480 프레임 중앙 300x300
+_DEFAULT_LEARN_ZONE = (170, 90, 300, 300)   # (x, y, w, h)
+
+# ── 헬퍼: 피부색 마스크 (YCrCb — 조명 변화에 강함) ──────
+def _skin_mask(img):
+    """피부색 픽셀 = 255, 그 외 = 0. 손을 제거하기 위해 사용."""
+    ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+    mask = cv2.inRange(ycrcb, (0, 133, 77), (255, 173, 127))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    return cv2.dilate(mask, kernel, iterations=2)   # 여유 있게 확장
+
+# ── 헬퍼: 프레임 차분 모션 마스크 ────────────────────────
+def _motion_mask(frame, prev_frame):
+    diff = cv2.absdiff(
+        cv2.cvtColor(frame,      cv2.COLOR_BGR2GRAY),
+        cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY),
+    )
+    _, mask = cv2.threshold(diff, 15, 255, cv2.THRESH_BINARY)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    return cv2.dilate(mask, kernel, iterations=2)
+
+# ── 칼만 필터 ────────────────────────────────────────────
+class KalmanTracker:
+    def __init__(self):
+        self.kf = cv2.KalmanFilter(4, 2)
+        self.kf.measurementMatrix = np.array([
+            [1, 0, 0, 0], [0, 1, 0, 0]], np.float32)
+        self.kf.transitionMatrix = np.array([
+            [1, 0, 1, 0], [0, 1, 0, 1],
+            [0, 0, 1, 0], [0, 0, 0, 1]], np.float32)
+        self.kf.processNoiseCov     = np.eye(4, dtype=np.float32) * 5.0
+        self.kf.measurementNoiseCov = np.eye(2, dtype=np.float32) * 1.0
+        self.kf.errorCovPost        = np.eye(4, dtype=np.float32) * 10.0
+        self.initialized = False
+        self.lost = 0
+        self.MAX_LOST = 20
+
+    def update(self, cx, cy):
+        m = np.array([[np.float32(cx)], [np.float32(cy)]])
+        if not self.initialized:
+            self.kf.statePost = np.array(
+                [[np.float32(cx)], [np.float32(cy)], [0.0], [0.0]], np.float32)
+            self.initialized = True
+        self.kf.correct(m)
+        self.lost = 0
+        p = self.kf.predict()
+        return int(p[0][0]), int(p[1][0])
+
+    def predict_next(self):
+        if not self.initialized:
+            return None
+        self.lost += 1
+        if self.lost > self.MAX_LOST:
+            self.initialized = False
+            return None
+        p = self.kf.predict()
+        return int(p[0][0]), int(p[1][0])
+
+    def reset(self):
+        self.initialized = False
+        self.lost = 0
+
+# ── ORB 멀티뷰 트래커 (손 제외) ──────────────────────────
+class ORBTracker:
+    LEARN_SEC     = 4.0
+    SAMPLE_EVERY  = 2
+    MAX_TRAIN_DES = 8000
+    MIN_MATCHES   = 8
+
+    def __init__(self):
+        self.orb = cv2.ORB_create(nfeatures=400, scaleFactor=1.2,
+                                   nlevels=8, edgeThreshold=15)
+        self.matcher   = None
+        self.train_des = None
+        self.active    = False
+        self.learning  = False
+        self.learn_zone: tuple[int,int,int,int] = (170, 90, 300, 300)  # (x,y,w,h) — ROI
+        self._start: float = 0.0
+        self._buf      = []
+        self._cnt      = 0
+        
+        # 저장된 기존 학습 데이터 복원 시도
+        self.load_saved_data()
+
+    @property
+    def progress(self):
+        if not self.learning:
+            import state
+            if state.learning_failed:
+                return 100
+            return 100 if self.active else 0
+        return min(99, int((time.time() - self._start) / self.LEARN_SEC * 100))
+
+    def load_saved_data(self):
+        """서버 시작 시 learning_data 폴더에서 descriptors와 learn_zone 복원"""
+        import os
+        folder = "learning_data"
+        des_path = os.path.join(folder, "orb_descriptors.npy")
+        zone_path = os.path.join(folder, "learn_zone.txt")
+        
+        if os.path.exists(des_path):
+            try:
+                self.train_des = np.load(des_path)
+                idx_p = dict(algorithm=6, table_number=6, key_size=12, multi_probe_level=1)
+                self.matcher = cv2.FlannBasedMatcher(idx_p, {"checks": 50})
+                self.matcher.add([self.train_des])
+                self.matcher.train()
+                self.active = True
+                state.tracking_mode = "custom"
+                print(f"[ORBTracker] Persisted descriptors loaded from {des_path}. Shape: {self.train_des.shape}")
+            except Exception as e:
+                print(f"[ORBTracker] Error loading descriptors: {e}")
+                
+        if os.path.exists(zone_path):
+            try:
+                with open(zone_path, "r") as f:
+                    coords = [int(v) for v in f.read().strip().split(",")]
+                    if len(coords) == 4:
+                        self.learn_zone = tuple(coords)
+                        print(f"[ORBTracker] Persisted learn zone loaded: {self.learn_zone}")
+            except Exception as e:
+                print(f"[ORBTracker] Error loading learn zone: {e}")
+
+    def save_data(self):
+        """학습 완료 시 learning_data 폴더에 npy 파일 및 영역 텍스트 저장"""
+        import os
+        folder = "learning_data"
+        os.makedirs(folder, exist_ok=True)
+        des_path = os.path.join(folder, "orb_descriptors.npy")
+        zone_path = os.path.join(folder, "learn_zone.txt")
+        
+        if self.train_des is not None:
+            try:
+                np.save(des_path, self.train_des)
+                print(f"[ORBTracker] Saved learning descriptors to {des_path}")
+            except Exception as e:
+                print(f"[ORBTracker] Error saving descriptors: {e}")
+                
+        try:
+            with open(zone_path, "w") as f:
+                f.write(f"{self.learn_zone[0]},{self.learn_zone[1]},{self.learn_zone[2]},{self.learn_zone[3]}")
+            print(f"[ORBTracker] Saved learn zone to {zone_path}")
+        except Exception as e:
+            print(f"[ORBTracker] Error saving learn zone: {e}")
+
+    def start_learning(self, n_samples=20):
+        import state
+        state.learning_failed = False
+        self.active    = False
+        self.learning  = True
+        self.train_des = None
+        self.matcher   = None
+        self._buf      = []
+        self._start    = time.time()
+        self._cnt      = 0
+
+    def process_frame(self, frame, prev_frame=None):
+        """학습 중 호출 — 피부 + 정적 배경 제외 후 특징 수집"""
+        if not self.learning:
+            return
+
+        self._cnt += 1
+        if self._cnt % self.SAMPLE_EVERY != 0:
+            return
+
+        x, y, w, h = self.learn_zone
+        roi = frame[y:y + h, x:x + w]
+
+        # 1) 피부색 제거
+        skin    = _skin_mask(roi)
+        no_skin = cv2.bitwise_not(skin)
+
+        # 2) 움직이는 영역만 (이전 프레임 있으면)
+        if prev_frame is not None:
+            prev_roi = prev_frame[y:y + h, x:x + w]
+            diff = cv2.absdiff(
+                cv2.cvtColor(roi,      cv2.COLOR_BGR2GRAY),
+                cv2.cvtColor(prev_roi, cv2.COLOR_BGR2GRAY),
+            )
+            _, motion = cv2.threshold(diff, 12, 255, cv2.THRESH_BINARY)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+            motion = cv2.dilate(motion, kernel, iterations=2)
+            # 피부 제외 + 움직임 교집합 = 손이 아닌 움직이는 물체
+            obj_mask = cv2.bitwise_and(no_skin, motion)
+            # 교집합이 너무 작으면 피부 제외만 사용 (물체가 잠시 멈춘 경우)
+            if cv2.countNonZero(obj_mask) < 80:
+                obj_mask = no_skin
+        else:
+            obj_mask = no_skin
+
+        _, des = self.orb.detectAndCompute(roi, obj_mask)
+        if des is not None and len(des) >= 5:
+            self._buf.append(des)
+
+        if time.time() - self._start >= self.LEARN_SEC:
+            self._finish()
+
+    def _finish(self):
+        self.learning = False
+        if not self._buf:
+            import state
+            state.learning_failed = True
+            return
+        import state
+        state.learning_failed = False
+        all_des = np.vstack(self._buf)
+        if len(all_des) > self.MAX_TRAIN_DES:
+            idx = np.random.choice(len(all_des), self.MAX_TRAIN_DES, replace=False)
+            all_des = all_des[idx]
+        self.train_des = all_des
+        # FLANN (LSH for binary descriptors)
+        idx_p = dict(algorithm=6, table_number=6, key_size=12, multi_probe_level=1)
+        self.matcher = cv2.FlannBasedMatcher(idx_p, {"checks": 50})
+        self.matcher.add([all_des])
+        self.matcher.train()
+        self.active = True
+        
+        # 파일 저장 호출
+        self.save_data()
+
+    def track(self, frame, motion=None):
+        if not self.active or self.matcher is None:
+            return None
+
+        # 모션 영역 우선 탐색 → 특징점 부족하면 전체 프레임
+        kp, des = self.orb.detectAndCompute(frame, motion)
+        if des is None or len(des) < 10:
+            kp, des = self.orb.detectAndCompute(frame, None)
+        if des is None or len(des) < 5:
+            return None
+
+        try:
+            pairs = self.matcher.knnMatch(des, k=2)
+        except Exception:
+            return None
+
+        good = []
+        for pair in pairs:
+            if len(pair) == 2:
+                m, n = pair
+                if m.distance < 0.75 * n.distance:
+                    good.append(m)
+
+        if len(good) < self.MIN_MATCHES:
+            return None
+
+        pts = np.array([kp[m.queryIdx].pt for m in good], np.float32)
+        x, y, w, h = cv2.boundingRect(pts.reshape(-1, 1, 2).astype(np.int32))
+        pad = 12
+        x = max(0, x - pad); y = max(0, y - pad)
+        w = min(639 - x, w + 2 * pad)
+        h = min(479 - y, h + 2 * pad)
+        return {"cx": x + w // 2, "cy": y + h // 2,
+                "x": x, "y": y, "w": w, "h": h,
+                "matches": len(good), "predicted": False}
+
+    def reset(self):
+        self.active    = False
+        self.learning  = False
+        self.train_des = None
+        self.matcher   = None
+        self._buf      = []
+        # 저장 폴더의 파일들 삭제
+        import os
+        folder = "learning_data"
+        des_path = os.path.join(folder, "orb_descriptors.npy")
+        zone_path = os.path.join(folder, "learn_zone.txt")
+        for path in (des_path, zone_path):
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                    print(f"[ORBTracker] Deleted persisted file: {path}")
+                except Exception:
+                    pass
+
+# ── Hough Circle 폴백 (흰 공 등 원형 물체) ────────────────
+class CircleDetector:
+    """ORB 실패 시 폴백. 형태만 보므로 흰 공 ↔ 흰 배경도 감지 가능."""
+
+    def detect(self, frame, motion=None):
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        # 모션 영역만 사용 (배경 원형 노이즈 방지)
+        search = gray
+        if motion is not None and cv2.countNonZero(motion) > 200:
+            search = cv2.bitwise_and(gray, gray, mask=motion)
+
+        blurred = cv2.GaussianBlur(search, (9, 9), 2)
+
+        circles = cv2.HoughCircles(
+            blurred,
+            cv2.HOUGH_GRADIENT,
+            dp=1, minDist=40,
+            param1=60, param2=18,
+            minRadius=12, maxRadius=130,
+        )
+        if circles is None:
+            return None
+
+        circles = np.round(circles[0]).astype(int)
+
+        # 피부색 중심 원 제외 (손가락 끝 등)
+        skin = _skin_mask(frame)
+        best = None
+        best_r = 0
+        for cx, cy, r in circles:
+            if 0 <= cy < frame.shape[0] and 0 <= cx < frame.shape[1]:
+                if skin[cy, cx]:      # 중심이 피부색 → 손 가능성, 스킵
+                    continue
+                if r > best_r:
+                    best_r = r
+                    best = (cx, cy, r)
+
+        if best is None:
+            return None
+
+        cx, cy, r = best
+        return {
+            "cx": int(cx), "cy": int(cy),
+            "x": int(cx - r), "y": int(cy - r),
+            "w": int(2 * r), "h": int(2 * r),
+            "predicted": False,
+            "detector": "hough",
+        }
+
+# ── 모듈 인스턴스 ────────────────────────────────────────
+_orb    = ORBTracker()
+_circle = CircleDetector()
+_kalman = KalmanTracker()
+_thread = None
+
+def get_learning_progress():
+    return _orb.progress
+
+def reset_tracker():
+    _orb.reset()
+    _kalman.reset()
+    state.ball = None
+    state.ball_lost = False
+    state.learning_progress = 0
+
+# ── 메인 루프 ────────────────────────────────────────────
+def _run():
+    last_id    = None
+    prev_frame = None
+
+    while True:
+        frame = state.current_frame
+        if frame is None:
+            time.sleep(0.01)
+            continue
+
+        # ── 학습 중 ─────────────────────────────────────
+        if _orb.learning:
+            if time.time() - _orb._start >= _orb.LEARN_SEC:
+                _orb._finish()
+                state.learning_progress = 100
+            else:
+                frame_id = id(frame)
+                if frame_id != last_id:
+                    _orb.process_frame(frame, prev_frame)
+                    prev_frame = frame.copy()
+                    last_id = frame_id
+                state.learning_progress = _orb.progress
+            time.sleep(0.01)
+            continue
+
+        frame_id = id(frame)
+        if frame_id == last_id:
+            time.sleep(0.005)
+            continue
+        last_id = frame_id
+
+        # ── 추적 ────────────────────────────────────────
+        motion = _motion_mask(frame, prev_frame) if prev_frame is not None else None
+        prev_frame = frame.copy()
+
+        ball = None
+
+        # 1) ORB 특징점 매칭
+        if _orb.active:
+            ball = _orb.track(frame, motion)
+
+        # 2) ORB 실패 → Hough Circle (흰 공 등 원형 물체 대응)
+        if ball is None and motion is not None:
+            ball = _circle.detect(frame, motion)
+
+        # ── 칼만 갱신 ────────────────────────────────────
+        if ball:
+            px, py = _kalman.update(ball["cx"], ball["cy"])
+            ball["predicted_cx"] = px
+            ball["predicted_cy"] = py
+            state.ball      = ball
+            state.ball_lost = False
+        elif _orb.active:
+            pred = _kalman.predict_next()
+            state.ball_lost = True
+            state.ball = (
+                {"cx": pred[0], "cy": pred[1], "predicted": True}
+                if pred else None
+            )
+        else:
+            state.ball      = None
+            state.ball_lost = False
+
+        # ── 자동 모드: 조준점 갱신 ───────────────────────
+        if state.control_mode == "auto" and state.ball:
+            tx = state.ball.get("predicted_cx", state.ball["cx"])
+            ty = state.ball.get("predicted_cy", state.ball["cy"])
+            state.point[0] = max(0, min(639, tx))
+            state.point[1] = max(0, min(479, ty))
+
+def start():
+    global _thread
+    _thread = threading.Thread(target=_run, daemon=True)
+    _thread.start()
+
+def set_learn_zone(x, y, w, h):
+    _orb.learn_zone = (int(x), int(y), int(w), int(h))
+
+def get_learn_zone():
+    return getattr(_orb, 'learn_zone', _DEFAULT_LEARN_ZONE)
+
+def start_learning(n_samples=20):
+    _orb.start_learning(n_samples=n_samples)
+    _kalman.reset()
+    state.ball = None
+    state.ball_lost = False
+    state.learning_progress = 0
