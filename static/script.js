@@ -287,6 +287,8 @@ function getBaseCenter(){
 let joyDirX = 0;
 let joyDirY = 0;
 
+let _joyLastSend = 0;
+
 function checkJoystickDir() {
     if (inputMode !== "joystick") return;
     
@@ -298,9 +300,15 @@ function checkJoystickDir() {
     if (joyVy > 0.3) newDirY = 1;
     else if (joyVy < -0.3) newDirY = -1;
     
-    if (newDirX !== joyDirX || newDirY !== joyDirY) {
+    const now = Date.now();
+    const dirChanged = (newDirX !== joyDirX || newDirY !== joyDirY);
+    // 조이스튱을 누르고 있는 동안 매 800ms마다 재전송 (모터가 dist를 다 소진 후 멈춰도 다시 구동)
+    const shouldResend = (newDirX !== 0 || newDirY !== 0) && (now - _joyLastSend > 800);
+    
+    if (dirChanged || shouldResend) {
         joyDirX = newDirX;
         joyDirY = newDirY;
+        _joyLastSend = now;
         fetch(`/joystick_dir?x=${joyDirX}&y=${joyDirY}`).catch(()=>{});
     }
 }

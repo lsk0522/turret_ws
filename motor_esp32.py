@@ -56,6 +56,11 @@ def connect(port=None, baudrate=115200):
         state.motor_connected = True
         state.motor_port = port
         print(f"[esp32] 연결: {port}")
+        # 연결 직후 현재 감도(MSL)를 ESP32에 즉시 동기화
+        hz = state.speed * 150
+        state.esp32_max_speed_hz = hz
+        _send(f"CFG:MSL:{hz}\n")
+        print(f"[esp32] 초기 속도 동기화: MSL={hz}Hz (speed={state.speed})")
     except Exception as e:
         print(f"[esp32] 연결 실패 ({port}): {e}")
         state.motor_connected = False
