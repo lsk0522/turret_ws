@@ -46,6 +46,10 @@ motor_moving      = False
 motor_timeout     = False
 motor_stopped     = False
 
+# Dynamic UI/Processing attributes
+is_running = True
+threaded = True
+
 # ─── 연결된 기기 타입 ─────────────────────────────────────────
 # "esp32" | "arduino"
 device_type = "esp32"
@@ -88,4 +92,3 @@ arduino_pos_m2 = 0   # M2 현재 위치 (steps)
 # ─── ESP32 위치 제어 큐 추적 변수 ────────────────────────────
 last_queued_target_m1 = 0.0
 last_queued_target_m2 = 0.0
-

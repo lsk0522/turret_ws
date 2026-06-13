@@ -13,5 +13,6 @@ motor.start()      # ESP32 연결 (포트 자동 감지)
 app.run(
     host='0.0.0.0',
     port=5000,
-    debug=False
+    debug=False,
+    threaded=True
 )

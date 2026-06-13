@@ -328,18 +328,22 @@ function updateStick(tx, ty){
 }
 
 function resetStick(){
+    // Spring-back animation: restore transition then snap to center with physics
+    stick.style.transition = 'left 0.45s cubic-bezier(0.34,1.56,0.64,1.0), top 0.45s cubic-bezier(0.34,1.56,0.64,1.0), background 0.15s';
     stick.style.left = BASE_R + "px";
     stick.style.top  = BASE_R + "px";
+    setTimeout(() => { stick.style.transition = ''; }, 460);
+
     joyVx = 0;
     joyVy = 0;
     joystickTouchId = null;
-    
+
     if (inputMode === "joystick" && (joyDirX !== 0 || joyDirY !== 0)) {
         joyDirX = 0;
         joyDirY = 0;
         fetch(`/joystick_dir?x=0&y=0`).catch(()=>{});
     }
-    
+
     fetch(`/click?x=${Math.round(tPx)}&y=${Math.round(tPy)}`).catch(()=>{});
     lastSync = Date.now();
 }
@@ -385,37 +389,66 @@ base.addEventListener("mousedown", (e)=>{
 });
 
 /* ==========================================
+   Toast 알림 시스템 (alert() 대체)
+   ========================================== */
+function showToast(msg, type = 'info', duration = 3000) {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = msg;
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('toast-show'));
+    setTimeout(() => {
+        toast.classList.remove('toast-show');
+        toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+    }, duration);
+}
+
+/* ==========================================
    액션 이벤트 핸들링 (캡처, 플립)
    ========================================== */
 const flashOverlay = document.getElementById("flash-overlay");
 
 function triggerFlash() {
     flashOverlay.classList.remove("flash-active");
-    void flashOverlay.offsetWidth; // 리플로우 트리거
+    void flashOverlay.offsetWidth;
     flashOverlay.classList.add("flash-active");
 }
 
 document.getElementById("btn-capture").addEventListener("click", () => {
-    triggerFlash();
+    // Flash fires only on SUCCESS (not false-positive on error)
     fetch("/capture")
         .then(() => {
-            // 촬영 성공 후 갤러리 리스트를 비동기로 다시 불러와서 최신 촬영본 반영
+            triggerFlash();
             setTimeout(updateGallery, 350);
         })
-        .catch(err => console.log("Capture error: ", err));
+        .catch(() => showToast('촬영 실패: 카메라 연결을 확인하세요', 'error'));
 });
 
 document.getElementById("btn-flip").addEventListener("click", () => {
-    fetch("/flip");
+    fetch("/flip").catch(() => showToast('플립 실패', 'error'));
 });
 
-/* 메인 드로잉 및 조준점 갱신 루프 */
-function loop(){
+/* ==========================================
+   메인 드로잉 및 조준점 갱신 루프 (delta-time lerp)
+   ========================================== */
+let _lastFrameTime = 0;
+
+function loop(timestamp){
+    const dt = _lastFrameTime === 0 ? 1 : Math.min((timestamp - _lastFrameTime) / (1000 / 60), 3);
+    _lastFrameTime = timestamp;
+
     if (controlMode === "manual") {
         if (inputMode !== "joystick") {
-            // 포인터 모드 등에서는 서버 위치로 부드럽게 수렴
-            px += (tPx - px) * 0.30;
-            py += (tPy - py) * 0.30;
+            // Pointer mode: smooth lerp using delta-time (frame-rate independent)
+            const factor = 1 - Math.pow(0.70, dt);
+            px += (tPx - px) * factor;
+            py += (tPy - py) * factor;
         } else {
             // 조이스틱 모드에서는 크로스헤어를 중앙에 고정 (모터 자체를 회전시킴)
             px += (320 - px) * 0.30;
@@ -431,7 +464,7 @@ function loop(){
     drawCrosshair();
     requestAnimationFrame(loop);
 }
-loop();
+requestAnimationFrame(loop);
 
 /* ==========================================
    애플 스타일 설정창 제어
@@ -440,12 +473,28 @@ const settingsBtn = document.getElementById("settings-btn");
 const settingsModal = document.getElementById("settings-modal");
 const closeSettings = document.getElementById("close-settings");
 
+/* ==========================================
+   모달 열기/닫기 (Apple spring 애니메이션)
+   ========================================== */
+function _closeModalAnimate(modal) {
+    const panel = modal.querySelector('.ios-modal-panel, .more-learn-panel, .gallery-panel, .motor-status-panel, .motor-cfg-panel, .camera-settings-panel');
+    modal.classList.add('modal-closing');
+    if (panel) {
+        panel.style.animation = 'panelOut 0.22s cubic-bezier(0.55,0,1,0.45) forwards';
+    }
+    setTimeout(() => {
+        modal.style.display = 'none';
+        modal.classList.remove('modal-closing');
+        if (panel) panel.style.animation = '';
+    }, 220);
+}
+
 function openSettings(){
     settingsModal.style.display = "flex";
 }
 
 function closeSettingsModal(){
-    settingsModal.style.display = "none";
+    _closeModalAnimate(settingsModal);
 }
 
 settingsBtn.addEventListener("click", openSettings);
@@ -485,14 +534,18 @@ document.addEventListener("keydown", function(e){
     }
 });
 
-/* 속도 슬라이더 연동 */
+/* 속도 슬라이더 — debounce to avoid 60 HTTP requests/sec */
 const speedSlider = document.getElementById("speed-slider");
 const speedValue = document.getElementById("speed-value");
 
+let _speedDebounce = null;
 speedSlider.addEventListener("input", function(){
     maxSpeed = parseFloat(speedSlider.value);
     speedValue.textContent = speedSlider.value;
-    fetch(`/set_speed?speed=${speedSlider.value}`);
+    clearTimeout(_speedDebounce);
+    _speedDebounce = setTimeout(() => {
+        fetch(`/set_speed?speed=${speedSlider.value}`).catch(() => {});
+    }, 150);
 });
 
 /* ── Input Mode: "pointer" | "joystick" | "auto" ──────────────── */
@@ -693,12 +746,13 @@ if (btnClearTarget) {
             targetPreviewRow.style.display = "none";
             btnSelectTarget.textContent = "물건 새로 학습하기";
             _sessionCount = 0;
-            const res = await fetch("/set_mode?mode=manual");
-            const data = await res.json();
-            controlMode = data.mode;
-            setControlModeUI(controlMode);
+            // Fix: use setInputModeUI (correct function name, was setControlModeUI)
+            controlMode = 'manual';
+            setInputModeUI('joystick');
+            await fetch("/set_mode?mode=manual");
         } catch (e) {
             console.error("타겟 초기화 실패", e);
+            showToast('타겟 초기화 실패', 'error');
         }
     });
 }
@@ -952,7 +1006,8 @@ async function _pollLearning() {
                 learnBannerTxt.style.color = "#ff453a";
                 setTimeout(() => {
                     exitLearningMode();
-                    alert("인식된 특징점이 부족하여 학습에 실패했습니다. 물체를 밝은 곳에 두고 다시 시도해 주세요.");
+                    // Replace alert() with styled toast
+                    showToast('인식된 특징점이 부족합니다. 밝은 곳에서 다시 시도해 주세요.', 'error', 5000);
                 }, 1000);
             } else {
                 learnBannerTxt.textContent = "✓ 학습 완료!";
@@ -1014,21 +1069,15 @@ function openGalleryModal(index = 0) {
 }
 
 function closeGalleryModal() {
-    galleryModal.style.display = "none";
+    _closeModalAnimate(galleryModal);
 }
 
 galleryBtn.addEventListener("click", async () => {
-    // Always refresh before opening so newly taken photos appear
     await updateGallery();
     if (captures.length > 0) {
         openGalleryModal(0);
     } else {
-        // If still empty, show a toast-like message
-        const empty = document.getElementById("gallery-empty-icon");
-        if (empty) {
-            empty.style.opacity = "0.3";
-            setTimeout(() => { empty.style.opacity = ""; }, 800);
-        }
+        showToast('\uc544\uc9c1 \ucd2c\uc601\uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4 \u2014 \uc154\ud130 \ubc84\ud2bc\uc744 \ub20c\ub7ec\ubcf4\uc138\uc694', 'info');
     }
 });
 
@@ -1047,6 +1096,10 @@ function renderActiveImage() {
     const imgInfo = document.getElementById("gallery-img-info");
     const downloadBtn = document.getElementById("gallery-download");
 
+    // Skeleton loading: add .loading class until image loads
+    activeImg.classList.add('loading');
+    activeImg.onload = () => activeImg.classList.remove('loading');
+    activeImg.onerror = () => activeImg.classList.remove('loading');
     activeImg.src = `/picture/${filename}`;
 
     // 이미지 정보 파싱 (예: 320_240_1623456789.jpg -> 날짜 및 조준 좌표)

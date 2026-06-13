@@ -39,16 +39,17 @@ def setup_routes(app):
 
     @app.route('/click')
     def click():
+        try:
+            x = int(float(request.args.get('x', 320)))
+            y = int(float(request.args.get('y', 240)))
+        except (TypeError, ValueError):
+            return "INVALID", 400
 
-        x = int(float(request.args.get('x')))
-        y = int(float(request.args.get('y')))
-
-        state.point[0] = x
-        state.point[1] = y
-
+        # Atomic tuple update to avoid race between partial x/y assignments
+        state.point = [x, y]
         state.last_point = (x, y)
 
-        # Force track mode if we are moving via click/joystick
+        # Force track mode for visual targeting
         if state.esp32_control_mode != "track":
             import motor_esp32 as esp
             esp.set_mode("track")
@@ -136,30 +137,34 @@ def setup_routes(app):
 
     @app.route('/set_speed')
     def set_speed():
-        speed = int(request.args.get("speed"))
+        try:
+            speed = int(request.args.get("speed", state.speed))
+        except (TypeError, ValueError):
+            return "INVALID", 400
         state.speed = speed
         return "OK"
 
     @app.route('/joystick_dir')
     def joystick_dir():
-        """조이스틱 8방향 제어 (무한 이동 후 S 명령으로 정지)"""
+        """Joystick 8-direction control — enqueue large relative move then stop on release."""
         import motor_esp32 as esp
-        x = int(request.args.get('x', 0))
-        y = int(request.args.get('y', 0))
-        
+        try:
+            x = int(request.args.get('x', 0))
+            y = int(request.args.get('y', 0))
+        except (TypeError, ValueError):
+            return "INVALID", 400
+
         if x == 0 and y == 0:
             esp.stop_motors()
             return "OK"
-            
-        esp.stop_motors()
-        
-        # 방향에 맞춰 큰 값을 큐에 넣어서 계속 회전하게 함
+
+        # Only flush queue once (not stop_motors twice)
         dist = 10000.0
         if x != 0:
             esp.enqueue_move('M1', x * dist, is_absolute=False)
         if y != 0:
             esp.enqueue_move('M2', y * dist, is_absolute=False)
-            
+
         return "OK"
 
     # -------------------------
@@ -196,15 +201,14 @@ def setup_routes(app):
         mode = request.args.get('mode', 'joystick')
         if mode in ('joystick', 'pointer', 'auto'):
             state.input_mode = mode
-            # Sync control_mode for backend tracking logic
             if mode == 'auto':
                 state.control_mode = 'auto'
             else:
                 state.control_mode = 'manual'
-            
-            # Switch motor to track mode for visual targeting
-            import motor_esp32 as esp
-            esp.set_mode("track")
+                # Switch to track mode only for manual targeting
+                import motor_esp32 as esp
+                if state.motor_connected:
+                    esp.set_mode("track")
         return "OK"
 
     @app.route('/set_device_type')
@@ -221,16 +225,13 @@ def setup_routes(app):
 
     @app.route('/reconnect_esp32')
     def reconnect_esp32():
-        """지정한 포트(또는 자동 감지)로 ESP32 재연결"""
+        """Thread-safe ESP32 reconnect via specified or auto-detected port."""
         import motor_esp32 as esp
-        port = request.args.get('port', None)   # 예: ?port=COM6
+        port = request.args.get('port', None)
         try:
-            # 기존 연결 해제
-            if esp._ser and esp._ser.is_open:
-                esp._ser.close()
-            esp._ser = None
-            state.motor_connected = False
-            # 재연결 시도
+            # Use the safe_disconnect helper which holds the lock properly
+            esp.safe_disconnect()
+            # Reconnect
             esp.connect(port)
             if state.motor_connected:
                 return jsonify(ok=True, port=state.motor_port)

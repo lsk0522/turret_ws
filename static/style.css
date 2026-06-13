@@ -1886,3 +1886,180 @@ select option {
 }
 
 
+/* ============================================================
+   Apple UX 개선 — 모달 닫기 애니메이션 (panelOut)
+   ============================================================ */
+@keyframes panelOut {
+    from {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+    to {
+        transform: translateY(24px) scale(0.96);
+        opacity: 0;
+    }
+}
+
+@keyframes backdropOut {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+}
+
+.ios-modal-backdrop.modal-closing {
+    animation: backdropOut 0.22s var(--spring) forwards;
+    pointer-events: none;
+}
+
+/* ============================================================
+   Toast 알림 스타일 (Apple-style floating pill)
+   ============================================================ */
+#toast-container {
+    position: fixed;
+    bottom: 110px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    z-index: 9000;
+    pointer-events: none;
+}
+
+.toast {
+    padding: 11px 20px;
+    border-radius: 20px;
+    font-size: 13.5px;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+    backdrop-filter: blur(32px) saturate(200%);
+    -webkit-backdrop-filter: blur(32px) saturate(200%);
+    color: rgba(255, 255, 255, 0.95);
+    background: rgba(36, 36, 38, 0.85);
+    border: 0.5px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transform: translateY(16px) scale(0.92);
+    transition: opacity 0.28s var(--spring), transform 0.38s var(--spring-bounce);
+    pointer-events: none;
+}
+
+.toast.toast-show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.toast.toast-error {
+    background: rgba(255, 59, 48, 0.25);
+    border-color: rgba(255, 59, 48, 0.35);
+}
+
+.toast.toast-success {
+    background: rgba(48, 209, 88, 0.22);
+    border-color: rgba(48, 209, 88, 0.32);
+}
+
+.toast.toast-info {
+    background: rgba(10, 132, 255, 0.22);
+    border-color: rgba(10, 132, 255, 0.32);
+}
+
+/* ============================================================
+   touch-action: manipulation — 300ms 딜레이 제거 (모바일 UX)
+   ============================================================ */
+button,
+.control-circle,
+.shutter-btn,
+.segment-btn,
+.cfg-apply-btn,
+.ios-action-btn,
+.close-icon-btn,
+.klipper-param-apply,
+.preset-btn,
+.more-learn-btn {
+    touch-action: manipulation;
+}
+
+/* ============================================================
+   will-change — GPU 레이어 힌트 (blur 요소 성능 최적화)
+   ============================================================ */
+#system-header,
+#bottom-controls {
+    will-change: transform;
+}
+
+.ios-modal-panel,
+.gallery-panel,
+.motor-status-panel,
+.motor-cfg-panel {
+    will-change: transform, opacity;
+}
+
+/* ============================================================
+   버튼 Press 비대칭 애니메이션 — 빠르게 눌리고 스프링으로 복귀
+   ============================================================ */
+.control-circle {
+    transition: transform 0.40s var(--spring-bounce), background 0.18s var(--spring), border-color 0.18s var(--spring);
+}
+.control-circle:active {
+    transform: scale(0.86);
+    transition: transform 0.08s ease-in;
+}
+
+/* ============================================================
+   갤러리 이미지 skeleton loading shimmer
+   ============================================================ */
+@keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position:  200% 0; }
+}
+
+#gallery-active-img.loading {
+    background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.04) 25%,
+        rgba(255, 255, 255, 0.10) 50%,
+        rgba(255, 255, 255, 0.04) 75%
+    );
+    background-size: 200%;
+    animation: shimmer 1.5s infinite;
+}
+
+/* ============================================================
+   헤더/컨트롤 바 — 바닥 내부 테두리 추가 (더 정제된 glassmorph)
+   ============================================================ */
+#system-header {
+    box-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.22),
+        0 8px 24px rgba(0, 0, 0, 0.20),
+        inset 0 0.5px 0 rgba(255, 255, 255, 0.10),
+        inset 0 -0.5px 0 rgba(0, 0, 0, 0.12);
+}
+
+#bottom-controls {
+    box-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.22),
+        0 8px 24px rgba(0, 0, 0, 0.20),
+        inset 0 0.5px 0 rgba(255, 255, 255, 0.10),
+        inset 0 -0.5px 0 rgba(0, 0, 0, 0.12);
+}
+
+/* ============================================================
+   진행 바 — Apple easing (linear 대신)
+   ============================================================ */
+#learn-progress-fill {
+    transition: width 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+}
+
+/* ============================================================
+   @media prefers-reduced-motion — 접근성 (Apple HIG 준수)
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

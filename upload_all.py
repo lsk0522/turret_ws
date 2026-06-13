@@ -1,20 +1,17 @@
-import os
 import subprocess
+import datetime
 
 cmds = [
-    "git init",
-    "git remote add origin https://github.com/lsk0522/lsk0522.github.io.git",
-    "git fetch origin",
-    "git checkout -b main",
-    "git reset --mixed origin/main",
     "git add .",
-    "git commit -m \"Upload Turret project\"",
-    "git push -u origin main"
+    f"git commit -m \"Fix: threading safety, UX/UI Apple-quality improvements ({datetime.datetime.now().strftime('%Y-%m-%d %H:%M')})\"",
+    "git push origin main"
 ]
 
 for cmd in cmds:
     print(f"Running: {cmd}")
     res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    print(res.stdout)
+    if res.stdout:
+        print(res.stdout)
     if res.stderr:
         print("ERR:", res.stderr)
+print("Done!")
