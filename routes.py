@@ -142,6 +142,15 @@ def setup_routes(app):
         except (TypeError, ValueError):
             return "INVALID", 400
         state.speed = speed
+
+        # 1~20의 speed 값을 ESP32의 모터 최대 속도(Hz)로 변환 (기본값 10 = 2000Hz)
+        hz = speed * 200
+        state.esp32_max_speed_hz = hz
+
+        if state.device_type == "esp32" and state.motor_connected:
+            import motor_esp32 as esp
+            esp.send_config("MSL", hz)
+
         return "OK"
 
     @app.route('/joystick_dir')
