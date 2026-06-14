@@ -66,7 +66,7 @@ let px  = 320;   // 렌더링 위치 (lerp 적용)
 let py  = 240;
 let tPx = 320;   // 목표 위치 (서버 / 조이스틱이 설정)
 let tPy = 240;
-let maxSpeed = 3;
+let maxSpeed = 5;
 
 /* manual | auto */
 let controlMode = "manual";

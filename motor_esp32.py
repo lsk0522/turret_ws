@@ -177,10 +177,10 @@ def _run():
 
         now = time.time()
 
-        # track 모드: T:x:y 전송 (throttled + 200ms heartbeat)
+        # track 모드: T:x:y 전송 (좌표 변경 시 즉시 + 50ms heartbeat)
         if state.esp32_control_mode == "track":
             x, y = state.point[0], state.point[1]
-            if abs(x - last_x) >= 1 or abs(y - last_y) >= 1 or (now - last_t_time > 0.2):
+            if abs(x - last_x) >= 1 or abs(y - last_y) >= 1 or (now - last_t_time > 0.05):
                 _send(f"T:{x}:{y}\n")
                 last_x, last_y = x, y
                 last_t_time = now

@@ -4,7 +4,7 @@ flip_enabled = False
 current_frame = None
 
 # 조작 설정
-speed        = 3
+speed        = 5
 control_mode = "manual"
 input_mode   = "joystick"   # "joystick" | "pointer" | "auto"
 
@@ -45,7 +45,7 @@ motor_cmd_timeout_ms = 600
 esp32_control_mode    = "track"
 esp32_steps_per_mm_m1 = 78.0
 esp32_steps_per_mm_m2 = 78.0
-esp32_max_speed_hz    = 1000.0
+esp32_max_speed_hz    = 750.0  # speed=5 기본값 (5 × 150Hz)
 esp32_accel_rate      = 5.0
 
 # ESP32 mm 위치 피드백
