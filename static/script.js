@@ -458,13 +458,21 @@ function loop(timestamp){
             px += (tPx - px) * factor;
             py += (tPy - py) * factor;
         } else {
-            // 조이스틱 모드: 조이스틱 방향으로 커서가 화면 전체 범위까지 시각적 피드백 제공
-            const targetX = 320 + joyVx * 320;
-            const targetY = 240 + joyVy * 240;
-            px += (targetX - px) * 0.35;
-            py += (targetY - py) * 0.35;
-            tPx = 320;
-            tPy = 240;
+            // 조이스틱 모드: 기울기 × 감도(maxSpeed)에 비례한 속도로 커서를 밀어줌
+            // maxSpeed(1~20)  →  픽셀/프레임 속도: 1=1.5px, 20=30px
+            const joySpeed = maxSpeed * 1.5;
+            tPx += joyVx * joySpeed * dt;
+            tPy += joyVy * joySpeed * dt;
+            tPx = Math.max(0, Math.min(639, tPx));
+            tPy = Math.max(0, Math.min(479, tPy));
+            // 커서 렌더링은 tPx/tPy로 부드럽게 lerp
+            const factor = 1 - Math.pow(0.70, dt);
+            px += (tPx - px) * factor;
+            py += (tPy - py) * factor;
+            // 조이스틱이 움직이는 중에만 서버로 좌표 전송 (throttled 50ms)
+            if (Math.abs(joyVx) > 0.05 || Math.abs(joyVy) > 0.05) {
+                syncServer();
+            }
         }
     } else {
         // 자동 모드: 서버 갱신(80ms)을 lerp로 보간 → 끊김 없음

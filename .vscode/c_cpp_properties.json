@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "name": "Arduino-ESP32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.10/cores/esp32",
+                "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.10/variants/doitESP32devkitV1",
+                "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.10/libraries/**",
+                "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/tools/**"
+            ],
+            "defines": [
+                "USBCON",
+                "ARDUINO=10819",
+                "ESP32",
+                "ARDUINO_ARCH_ESP32",
+                "ARDUINO_ESP32_DEV"
+            ],
+            "intelliSenseMode": "gcc-x64",
+            "compilerPath": "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/tools/esp-x32/2601/bin/xtensa-esp32-elf-g++.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17"
+        }
+    ],
+    "version": 4
+}

@@ -1,31 +1,34 @@
 /* =====================================================================================
- *  Turret ESP32 Firmware — 단순 루프 기반 mm 위치 제어
- *  Python motor_esp32.py 완전 호환 버전
+ * Turret ESP32 Firmware — 단순 루프 기반 mm 위치 제어
+ * Python motor_esp32.py 완전 호환 버전
  *
  * 📌 핀 배선 (Lolin D32)
- *   M1_ENA → GPIO 13    M1_DIR → GPIO 14    M1_PUL → GPIO 16
- *   M2_ENA → GPIO 22    M2_DIR → GPIO 21    M2_PUL → GPIO 23
+ * M1_ENA → GPIO 13    M1_DIR → GPIO 14    M1_PUL → GPIO 16
+ * M2_ENA → GPIO 22    M2_DIR → GPIO 21    M2_PUL → GPIO 23
  *
  * 통신 프로토콜 (115200 baud)
- *  ── Pi → ESP32 ──────────────────────────────────────────────────
- *    "MOVE J M1 50.0\n"       M1을 50.0mm로 절대 이동
- *    "MOVE J M2 30.5\n"       M2를 30.5mm로 절대 이동
- *    "MOVE J M1,M2 20.0\n"    M1+M2 동시 이동
- *    "S\n"                    즉시 정지
- *    "SETHOME\n"              현재 위치를 원점으로 설정
- *    "STATUS\n" / "POS\n"     현재 위치 즉시 출력
- *    "MODE:POS\n"             (무시 — 항상 위치 제어 모드)
- *    "MODE:TRACK\n"           (무시)
- *    "CFG:MSL:<hz>\n"         최대 속도 Hz 변경
- *    "CFG:ACC:<rate*10>\n"    가속도 변경 (예: 50 = 5.0 Hz/ms)
- *    "CFG:SPM1:<steps*10>\n"  M1 steps/mm × 10
- *    "CFG:SPM2:<steps*10>\n"  M2 steps/mm × 10
+ * ── Pi → ESP32 ──────────────────────────────────────────────────
+ * "MOVE J M1 50.0\n"       M1을 50.0mm로 절대 이동
+ * "MOVE J M2 30.5\n"       M2를 30.5mm로 절대 이동
+ * "MOVE J M1,M2 20.0\n"    M1+M2 동시 이동
+ * "S\n"                    즉시 정지
+ * "SETHOME\n"              현재 위치를 원점으로 설정
+ * "STATUS\n" / "POS\n"     현재 위치 즉시 출력
+ * "MODE:POS\n"             (무시 — 항상 위치 제어 모드)
+ * "MODE:TRACK\n"           (무시)
+ * "CFG:MSL:<hz>\n"         최대 속도 Hz 변경
+ * "CFG:ACC:<rate*10>\n"    가속도 변경 (예: 50 = 5.0 Hz/ms)
+ * "CFG:SPM1:<steps*10>\n"  M1 steps/mm × 10 
+ * "CFG:SPM2:<steps*10>\n"  M2 steps/mm × 10
  *
- *  ── ESP32 → Pi ──────────────────────────────────────────────────
- *    "POS:m1_mm*100:m2_mm*100:spd1:spd2\n"  (30ms 주기 자동 출력)
- *    "OK <command>\n"
+ * ── ESP32 → Pi ──────────────────────────────────────────────────
+ * "POS:m1_mm*100:m2_mm*100:spd1:spd2\n"  (30ms 주기 자동 출력)
+ * "OK <command>\n"
  * =====================================================================================
  */
+
+// ── 헤더 선언 (대문자 A 필수) ──────────────────────────────────────
+#include <Arduino.h>
 
 // ── 핀 정의 ──────────────────────────────────────────────────────
 #define M1_ENA 13
@@ -64,7 +67,7 @@ void sendPosStatus();
 
 // ── Setup ─────────────────────────────────────────────────────────
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200); // Serial0 -> Serial로 수정
 
   pinMode(M1_ENA, OUTPUT);
   pinMode(M1_DIR, OUTPUT);
@@ -166,7 +169,6 @@ void loop() {
   }
 
   // ── 비블로킹 시리얼 명령 수신 ───────────────────────────
-  // Serial.readStringUntil은 블로킹 함수(기본 1초 타임아웃)—사용 금지
   while (Serial.available() > 0) {
     char c = (char)Serial.read();
     if (c == '\n') {
@@ -178,13 +180,12 @@ void loop() {
       if (_serialBuf.length() < 128)
         _serialBuf += c;
       else
-        _serialBuf = ""; // 오버플로 시 뺄우기
+        _serialBuf = ""; 
     }
   }
 }
 
 // ── POS 피드백 출력 (Python motor_esp32.py 호환 형식) ────────────
-// 형식: POS:m1_mm*100:m2_mm*100:spd1:spd2
 void sendPosStatus() {
   long pm1_cm = (STEPS_PER_MM_M1 > 0.001f)
                     ? (long)((currentPosM1 / STEPS_PER_MM_M1) * 100.0f)
@@ -236,7 +237,7 @@ void parseCommand(String cmd) {
     return;
   }
 
-  // MODE 명령 (항상 위치 제어 모드이므로 수신만 하고 OK 응답)
+  // MODE 명령
   if (upper == "MODE:POS" || upper == "MODE:TRACK") {
     Serial.print("OK ");
     Serial.println(upper);
