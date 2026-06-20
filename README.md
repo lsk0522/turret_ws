@@ -4,9 +4,6 @@
 
 <br/>
 
-<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=30&pause=1000&color=00D4FF&center=true&vCenter=true&width=750&lines=🤖+AI+Vision+Tracker+(Turret);스마트+객체+추적+시스템;Vision+%2B+Motor+%2B+Web+UI" alt="Typing SVG" />
-
-<br/>
 
 <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
 <img src="https://img.shields.io/badge/Flask-000000?style=for-the-badge&logo=flask&logoColor=white"/>
