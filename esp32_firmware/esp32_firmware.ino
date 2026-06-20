@@ -1,5 +1,5 @@
 /* =====================================================================================
- * Turret ESP32 Firmware — 실시간 좌표 추적 + mm 위치 제어 혼합
+ * AI Vision Tracker ESP32 Firmware — 실시간 좌표 추적 + mm 위치 제어 혼합
  * Python motor_esp32.py 완전 호환 버전
  *
  * 📌 핀 배선 (Lolin D32)
@@ -39,12 +39,12 @@
 #define M2_PUL 23
 
 // ── 물리 파라미터 (CFG 명령으로 실시간 변경 가능) ────────────────
-float STEPS_PER_MM_M1  = 78.0f;  // M1 steps/mm
-float STEPS_PER_MM_M2  = 78.0f;  // M2 steps/mm
-float STEPS_PER_PIX    = 0.060f; // T 명령용: steps/pixel (조정 가능)
+float STEPS_PER_MM_M1  = 78.0f;  // M1 steps/mm (조정 가능)
+float STEPS_PER_MM_M2  = 78.0f;  // M2 steps/mm (조정 가능)
+float STEPS_PER_PIX    = 2.0f; // 조이스틱 감도: 숫자를 낮추면 모터가 적게 돌고, 높이면 많이 돕니다. (2.0 ~ 5.0 추천)
 
-float MAX_SPEED_LIMIT  = 750.0f; // 최대 Hz (기본 감도 5 기준)
-float ACCELERATION_RATE= 8.0f;   // Hz/ms
+float MAX_SPEED_LIMIT  = 800.0f; // 모터 최고 속도: 늦게 따라오면 올리세요 (예: 1000.0)
+float ACCELERATION_RATE= 2.0f;   // 가속도: 밀리는 느낌이 들면 올리고, 틱틱거리면 낮추세요 (예: 1.0 ~ 4.0)
 
 // 화면 중앙 기준점 (T 명령 원점)
 const int CENTER_X = 320;
@@ -87,7 +87,7 @@ void setup() {
   digitalWrite(M2_PUL, HIGH);
 
   lastStatusMs = millis();
-  Serial.println("OK BOOT Turret ESP32 Ready");
+  Serial.println("OK BOOT AI Vision Tracker ESP32 Ready");
 }
 
 // ── Loop ──────────────────────────────────────────────────────────
@@ -128,7 +128,7 @@ void stepMotors(unsigned long curUs, unsigned long curMs) {
   if (remM1 != 0) {
     digitalWrite(M1_DIR, remM1 > 0 ? HIGH : LOW);
     float wallSpd1 = min(MAX_SPEED_LIMIT, (float)abs(remM1) * 20.0f);
-    if (wallSpd1 < 80.0f) wallSpd1 = 80.0f;
+    if (wallSpd1 < 20.0f) wallSpd1 = 20.0f;
 
     if (curMs - lastAccelTimeM1 >= 1) {
       lastAccelTimeM1 = curMs;
@@ -137,12 +137,12 @@ void stepMotors(unsigned long curUs, unsigned long curMs) {
     }
     if (currentSpeedM1 > wallSpd1) currentSpeedM1 = wallSpd1;
 
-    if (currentSpeedM1 > 10.0f) {
+    if (currentSpeedM1 > 5.0f) {
       unsigned long interval = (unsigned long)(1000000.0f / currentSpeedM1);
       if (curUs - lastPulseTimeM1 >= interval) {
         lastPulseTimeM1 = curUs;
         digitalWrite(M1_PUL, LOW);
-        delayMicroseconds(5);
+        delayMicroseconds(10);
         digitalWrite(M1_PUL, HIGH);
         currentPosM1 += (remM1 > 0) ? 1 : -1;
       }
@@ -156,7 +156,7 @@ void stepMotors(unsigned long curUs, unsigned long curMs) {
   if (remM2 != 0) {
     digitalWrite(M2_DIR, remM2 > 0 ? HIGH : LOW);
     float wallSpd2 = min(MAX_SPEED_LIMIT, (float)abs(remM2) * 20.0f);
-    if (wallSpd2 < 80.0f) wallSpd2 = 80.0f;
+    if (wallSpd2 < 20.0f) wallSpd2 = 20.0f;
 
     if (curMs - lastAccelTimeM2 >= 1) {
       lastAccelTimeM2 = curMs;
@@ -165,12 +165,12 @@ void stepMotors(unsigned long curUs, unsigned long curMs) {
     }
     if (currentSpeedM2 > wallSpd2) currentSpeedM2 = wallSpd2;
 
-    if (currentSpeedM2 > 10.0f) {
+    if (currentSpeedM2 > 5.0f) {
       unsigned long interval = (unsigned long)(1000000.0f / currentSpeedM2);
       if (curUs - lastPulseTimeM2 >= interval) {
         lastPulseTimeM2 = curUs;
         digitalWrite(M2_PUL, LOW);
-        delayMicroseconds(5);
+        delayMicroseconds(10);
         digitalWrite(M2_PUL, HIGH);
         currentPosM2 += (remM2 > 0) ? 1 : -1;
       }

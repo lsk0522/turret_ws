@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=30&pause=1000&color=00D4FF&center=true&vCenter=true&width=700&lines=🎯+Turret+Control+System;2축+스텝모터+자동+추적+터렛;Vision+%2B+Motor+%2B+Web+UI" alt="Typing SVG" />
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=30&pause=1000&color=00D4FF&center=true&vCenter=true&width=750&lines=🤖+AI+Vision+Tracker;실시간+비전+자동+추적+시스템;Vision+%2B+Motor+%2B+Web+UI" alt="Typing SVG" />
 
 <br/>
 
@@ -14,7 +14,7 @@
 <br/><br/>
 
 > **카메라 비전 인식(OpenCV)** 과 **2축 스텝모터(DM542 드라이버)** 를 결합한  
-> 실시간 자동 추적 스마트 터렛 제어 시스템 — 졸업작품 프로젝트
+> 실시간 자동 추적 AI 비전 트래커 시스템 — 졸업작품 프로젝트
 
 <br/>
 
@@ -24,9 +24,9 @@
 
 ## 📌 프로젝트 소개
 
-`turret_ws`는 **라즈베리 파이 4** 위에서 동작하는 스마트 터렛 제어 시스템입니다.  
+`AI_vision_tracker_ws`는 **라즈베리 파이 4** 위에서 동작하는 AI 기반 비전 트래킹 시스템입니다.  
 Flask 웹 서버, OpenCV 비전 파이프라인, UART 시리얼 통신을 하나로 통합하여  
-**웹 브라우저 하나만으로 어디서든 터렛을 원격 조종하고, 물체를 자동 추적**할 수 있습니다.
+**웹 브라우저 하나만으로 어디서든 카메라를 원격 조종하고, 물체를 자동 추적**할 수 있습니다.
 
 ```
 웹 UI (조이스틱·클릭)  ─►  Flask 서버  ─►  OpenCV 비전  ─►  UART  ─►  ESP32 / Arduino  ─►  DM542 드라이버  ─►  스텝모터
@@ -50,7 +50,7 @@ Flask 웹 서버, OpenCV 비전 파이프라인, UART 시리얼 통신을 하나
 </tr>
 <tr>
 <td>🖱️ <strong>클릭 조준</strong></td>
-<td>영상 위 임의 지점을 클릭하면 그 방향으로 터렛 자동 정렬</td>
+<td>영상 위 임의 지점을 클릭하면 그 방향으로 카메라 자동 정렬</td>
 </tr>
 <tr>
 <td>📦 <strong>ROI 드래그 학습</strong></td>
@@ -192,7 +192,7 @@ $$\text{Steps} = \text{constrain}\!\left(\,|\text{Error}| \times \text{steps\_pe
 ## 📁 프로젝트 구조
 
 ```
-turret_ws/
+AI_vision_tracker_ws/
 ├── main.py               # Flask 앱 진입점
 ├── routes.py             # 모든 API 엔드포인트 정의
 ├── camera.py             # 카메라 캡처 & MJPEG 스트림

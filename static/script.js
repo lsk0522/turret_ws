@@ -1,5 +1,5 @@
 /* ==========================================
-   Apple Premium Script for Turret Controller
+   Apple Premium Script for AI Vision Tracker
    ========================================== */
 
 window.addEventListener("load", () => {
@@ -241,6 +241,12 @@ setInterval(async () => {
     try {
         const res = await fetch("/ball");
         ballState = await res.json();
+        if (ballState && ballState.detected && ballState.cx !== undefined) {
+            // 자동 모드: 실제 추적 대상의 위치를 조준점 타겟(tPx, tPy)으로 설정하여,
+            // 십자선이 모터 각도가 아닌 실제 물체를 부드럽게 따라가게 함
+            tPx = ballState.cx;
+            tPy = ballState.cy;
+        }
     } catch(e) {}
 }, 80);
 
@@ -254,9 +260,19 @@ function syncServer(){
 }
 
 async function syncPos(){
+    // 자동 모드일 때는 모터 위치(/pos)로 크로스헤어를 옮기지 않음
+    if (controlMode === "auto") return;
+    
+    // 조이스틱을 사용 중이거나 최근에 사용했다면 서버 위치로 덮어쓰지 않음 (튀는 현상 방지)
+    if (joystickTouchId !== null || (Date.now() - lastSync < 300)) return;
+    
     try {
         const res  = await fetch("/pos");
         const data = await res.json();
+        
+        // 비동기 네트워크 응답을 기다리는 동안 사용자가 조이스틱을 조작하기 시작했을 수 있으므로 재확인
+        if (controlMode === "auto" || joystickTouchId !== null || (Date.now() - lastSync < 300)) return;
+        
         tPx = data.x;   // 목표값만 갱신 — 렌더링은 loop()에서 lerp
         tPy = data.y;
     } catch(e) {}
@@ -265,7 +281,8 @@ async function syncPos(){
 // 자동 모드: 80ms마다 위치 동기화 (추적 반응성)
 // 수동 모드: 동기화 안 함 — 클라이언트가 직접 위치 관리
 setInterval(() => {
-    if (controlMode === "auto") {
+    // 자동 모드: syncPos(/pos)는 사용하지 않음 (모터 각도 추종 금지)
+    if (controlMode !== "auto") {
         syncPos();
     }
 }, 80);
@@ -332,7 +349,7 @@ function updateStick(tx, ty){
     joyVx = dx / maxDist;
     joyVy = dy / maxDist;
     
-    checkJoystickDir();
+    // checkJoystickDir(); // removed to prevent overlap with syncServer
 }
 
 function resetStick(){
@@ -547,6 +564,10 @@ document.addEventListener("keydown", function(e){
         closeMotorStatusModal();
     } else if (motorCfgModal.style.display === "flex") {
         closeMotorCfgModal();
+    } else if (typeof firmwareModal !== "undefined" && firmwareModal && firmwareModal.style.display === "flex") {
+        firmwareModal.style.display = "none";
+    } else if (typeof cameraCfgModal !== "undefined" && cameraCfgModal && cameraCfgModal.style.display === "flex") {
+        closeCameraCfgModal();
     } else {
         openSettings();
     }
@@ -748,8 +769,7 @@ if (btnAddLearning) {
         closeSettingsModal();
         try {
             await fetch("/add_learning?n=20");
-            _sessionCount++;
-            openLearnProgress();
+            _startLearningSession();
         } catch (e) {
             console.error("추가 학습 실패", e);
         }
@@ -911,7 +931,7 @@ function _showMoreLearnModal(thumbnail) {
     _renderDots(_sessionCount);
 
     // 지문인식 스타일 다각도 모션 가이드
-    const descEl = document.getElementById("more-learn-desc");
+    const descEl = document.querySelector(".more-learn-desc");
     if (descEl) {
         if (_sessionCount === 1) {
             descEl.innerHTML = "1단계 스캔 완료!<br>이번에는 물체를 <b>옆으로 살짝 돌려 측면</b>을 학습해 보세요.";
@@ -959,7 +979,7 @@ function _startLearnPoll() {
     learningProgress = 0;
     learnFill.style.width = "0%";
     learnPct.textContent  = "0%";
-    learnBannerTxt.textContent = "물건을 다양한 각도에서 보여주세요";
+    learnBannerTxt.textContent = "AI 트래커 대상을 지정했습니다!";
     learnBannerTxt.style.color = ""; // 색상 초기화
     learnOverlay.classList.add("active");
     document.getElementById("joystick-base").style.pointerEvents = "none";
@@ -1003,8 +1023,7 @@ function exitLearningMode() {
     if(_learnPollTimer) { clearInterval(_learnPollTimer); _learnPollTimer = null; }
 }
 
-/* [하위 호환] 기존 enterLearningMode 호출 유지 */
-function enterLearningMode() { openROISelect(); }
+
 
 async function _pollLearning() {
     try {
@@ -1028,14 +1047,22 @@ async function _pollLearning() {
                     showToast('인식된 특징점이 부족합니다. 밝은 곳에서 다시 시도해 주세요.', 'error', 5000);
                 }, 1000);
             } else {
-                learnBannerTxt.textContent = "✓ 학습 완료!";
+                learnBannerTxt.textContent = "✓ 추적 대상을 고정했습니다!";
                 learnBannerTxt.style.color = "#30d158";
                 setTimeout(() => {
                     exitLearningMode();
                     setTargetUI(data.thumbnail);
-                    /* 지문인식 스타일: 더 학습 모달 표시 */
-                    _showMoreLearnModal(data.thumbnail);
+                    /* 연속 3회전 학습이므로 추가 모달 표시 안 함 */
                 }, 800);
+            }
+        } else {
+            // 진행도에 따라 안내 텍스트 자동 변경 (3회전 안내)
+            if (data.progress < 33) {
+                learnBannerTxt.textContent = "제자리에서 360도 천천히 돌려주세요 (1/3 회전)";
+            } else if (data.progress < 66) {
+                learnBannerTxt.textContent = "살짝 기울여서 한 번 더 돌려주세요 (2/3 회전)";
+            } else {
+                learnBannerTxt.textContent = "마지막으로 반대쪽 측면을 돌려주세요 (3/3 회전)";
             }
         }
     } catch(e) {}
@@ -1062,11 +1089,11 @@ const galleryEmptyIcon = document.getElementById("gallery-empty-icon");
 
 async function updateGallery() {
     try {
-        const res = await fetch("/captures");
+        const res = await fetch("/captures?_t=" + Date.now());
         captures = await res.json();
 
         if (captures && captures.length > 0) {
-            galleryThumb.src = `/picture/${captures[0]}`;
+            galleryThumb.src = `/picture/${captures[0]}?_t=${Date.now()}`;
             galleryThumb.style.display = "block";
             galleryEmptyIcon.style.display = "none";
         } else {
@@ -1263,7 +1290,7 @@ const motorStatusBtn   = document.getElementById("motor-status-btn");
 const motorStatusModal = document.getElementById("motor-status-modal");
 const closeMotorStatus = document.getElementById("close-motor-status");
 
-function openMotorStatus()  { motorStatusModal.style.display = "flex"; }
+function openMotorStatus()  { motorStatusModal.style.display = "flex"; loadAvailablePorts(); }
 function closeMotorStatusModal() { motorStatusModal.style.display = "none"; }
 
 motorStatusBtn.addEventListener("click", openMotorStatus);
@@ -1360,7 +1387,7 @@ async function pollMotorStatus() {
                 msEyVal.textContent = `${d.error_y > 0 ? "+" : ""}${d.error_y} px`;
                 msM1Steps.textContent = `${d.steps_m1} step`;
                 msM2Steps.textContent = `${d.steps_m2} step`;
-                const maxS = 25;
+                const maxS = parseFloat(document.getElementById("cfg-max-steps")?.value || 25);
                 msM1Bar.style.width = Math.min(100, (d.steps_m1 / maxS) * 100) + "%";
                 msM2Bar.style.width = Math.min(100, (d.steps_m2 / maxS) * 100) + "%";
                 msM1Bar.className = "ms-axis-fill " + (d.moving ? "ms-fill-moving" : "");
@@ -1379,12 +1406,15 @@ async function pollMotorStatus() {
 }
 
 // 모달 열려 있을 때는 200ms, 닫혀 있을 때는 헤더 dot만 1초
+let _lastMotorPoll = 0;
 setInterval(() => {
-    if (motorStatusModal.style.display === "flex") {
+    const now = Date.now();
+    const interval = (motorStatusModal && motorStatusModal.style.display === "flex") ? 200 : 1000;
+    if (now - _lastMotorPoll >= interval) {
+        _lastMotorPoll = now;
         pollMotorStatus();
     }
-}, 200);
-setInterval(pollMotorStatus, 1000);  // 헤더 dot 갱신
+}, 50);
 
 /* ==========================================
    COM 포트 재연결 패널
@@ -1395,9 +1425,7 @@ const msReconnectMsg  = document.getElementById("ms-reconnect-msg");
 
 // 모터 상태 모달이 열릴 때 포트 목록 자동 새로고침
 // (motorStatusBtn은 982번 라인에서 이미 선언됨 — 중복 const 방지)
-document.getElementById("motor-status-btn")?.addEventListener("click", () => {
-    loadAvailablePorts();
-});
+
 
 async function loadAvailablePorts() {
     try {
@@ -1485,10 +1513,12 @@ function openMotorCfg() {
     showDeviceCfgSection(deviceType);
     motorCfgModal.style.display = "flex";
     loadMotorSettings();
+    loadEsp32MmSettings();
 }
 function closeMotorCfgModal() {
     motorCfgModal.style.display = "none";
     if (_ardPosPollTimer) { clearInterval(_ardPosPollTimer); _ardPosPollTimer = null; }
+    if (typeof esp32Mode !== "undefined" && esp32Mode === "pos") stopKlipperPoll();
 }
 
 btnOpenMotorCfg.addEventListener("click", openMotorCfg);
@@ -2065,15 +2095,7 @@ async function loadEsp32MmSettings() {
 
 // 모터 설정 모달이 열릴 때 Klipper 파라미터 로드
 // (btnOpenMotorSettings는 위에서 이미 선언됨 — 중복 const 방지)
-document.getElementById("btn-open-motor-settings")?.addEventListener("click", () => {
-    loadEsp32MmSettings();
-});
 
-// 모터 설정 모달 닫힐 때 폴링 중지
-// (closeMotorCfg는 1114번 라인에서 이미 const 선언됨 — 중복 방지)
-document.getElementById("close-motor-cfg")?.addEventListener("click", () => {
-    if (esp32Mode !== "pos") stopKlipperPoll();
-});
 
 /* ==========================================
    카메라 설정 모달
