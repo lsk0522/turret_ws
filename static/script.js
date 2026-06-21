@@ -319,8 +319,8 @@ function checkJoystickDir() {
     
     const now = Date.now();
     const dirChanged = (newDirX !== joyDirX || newDirY !== joyDirY);
-    // 조이스튱을 누르고 있는 동안 매 800ms마다 재전송 (모터가 dist를 다 소진 후 멈춰도 다시 구동)
-    const shouldResend = (newDirX !== 0 || newDirY !== 0) && (now - _joyLastSend > 800);
+    // 조이스틱을 누르고 있는 동안 매 200ms마다 재전송 (모터가 dist를 다 소진 후 멈춰도 다시 구동)
+    const shouldResend = (newDirX !== 0 || newDirY !== 0) && (now - _joyLastSend > 200);
     
     if (dirChanged || shouldResend) {
         joyDirX = newDirX;
@@ -1528,34 +1528,23 @@ motorCfgModal.addEventListener("click", (e) => {
 });
 
 // 슬라이더 + 값 표시 헬퍼
-const cfgStepsPx   = document.getElementById("cfg-steps-per-px");
-const cfgStepsPxV  = document.getElementById("cfg-steps-per-px-val");
-const cfgMaxSteps  = document.getElementById("cfg-max-steps");
-const cfgMaxStepsV = document.getElementById("cfg-max-steps-val");
+// ── 모터 설정 (현재 HTML의 숫자 입력창 기반으로 참조) ──
+// HTML에는 슬라이더가 아닌 number input + apply button 구조
+// cfg-steps-per-px, cfg-max-steps, cfg-pulse-us 슬라이더는 제거됨
+// → cfgDeadZone, cfgTimeout 슬라이더만 유지, 나머지는 klipper-param-apply 버튼으로 동작
 const cfgDeadZone  = document.getElementById("cfg-dead-zone");
 const cfgDeadZoneV = document.getElementById("cfg-dead-zone-val");
-const cfgPulseUs   = document.getElementById("cfg-pulse-us");
-const cfgPulseUsV  = document.getElementById("cfg-pulse-us-val");
 const cfgTimeout   = document.getElementById("cfg-timeout");
 const cfgTimeoutV  = document.getElementById("cfg-timeout-val");
 const cfgM1Btn     = document.getElementById("cfg-m1-invert");
 const cfgM2Btn     = document.getElementById("cfg-m2-invert");
 const cfgApplyMsg  = document.getElementById("cfg-apply-msg");
 
-cfgStepsPx.addEventListener("input", () => {
-    cfgStepsPxV.textContent = (cfgStepsPx.value / 1000).toFixed(3);
+if (cfgDeadZone) cfgDeadZone.addEventListener("input", () => {
+    if (cfgDeadZoneV) cfgDeadZoneV.textContent = cfgDeadZone.value;
 });
-cfgMaxSteps.addEventListener("input", () => {
-    cfgMaxStepsV.textContent = cfgMaxSteps.value;
-});
-cfgDeadZone.addEventListener("input", () => {
-    cfgDeadZoneV.textContent = cfgDeadZone.value;
-});
-cfgPulseUs.addEventListener("input", () => {
-    cfgPulseUsV.textContent = cfgPulseUs.value;
-});
-cfgTimeout.addEventListener("input", () => {
-    cfgTimeoutV.textContent = cfgTimeout.value;
+if (cfgTimeout) cfgTimeout.addEventListener("input", () => {
+    if (cfgTimeoutV) cfgTimeoutV.textContent = cfgTimeout.value;
 });
 
 function toggleInvertBtn(btn) {
@@ -1564,8 +1553,8 @@ function toggleInvertBtn(btn) {
     btn.textContent = active ? "OFF" : "ON";
     btn.classList.toggle("cfg-toggle-active", !active);
 }
-cfgM1Btn.addEventListener("click", () => toggleInvertBtn(cfgM1Btn));
-cfgM2Btn.addEventListener("click", () => toggleInvertBtn(cfgM2Btn));
+if (cfgM1Btn) cfgM1Btn.addEventListener("click", () => toggleInvertBtn(cfgM1Btn));
+if (cfgM2Btn) cfgM2Btn.addEventListener("click", () => toggleInvertBtn(cfgM2Btn));
 
 // 설정값 불러오기
 async function loadMotorSettings() {
@@ -1573,84 +1562,78 @@ async function loadMotorSettings() {
         const res = await fetch("/motor_settings");
         const d   = await res.json();
 
-        cfgStepsPx.value = Math.round(d.steps_per_px * 1000);
-        cfgStepsPxV.textContent = d.steps_per_px.toFixed(3);
+        // 숫자 입력창에 현재 값 반영
+        const stepsPxNum = document.getElementById("cfg-steps-per-px-num");
+        if (stepsPxNum) stepsPxNum.value = d.steps_per_px;
 
-        cfgMaxSteps.value = d.max_steps;
-        cfgMaxStepsV.textContent = d.max_steps;
+        const maxSpeedEl = document.getElementById("cfg-max-speed-hz");
+        if (maxSpeedEl) maxSpeedEl.value = d.max_speed_hz ?? 3000;
 
-        cfgDeadZone.value = d.dead_zone;
-        cfgDeadZoneV.textContent = d.dead_zone;
+        const accelEl = document.getElementById("cfg-accel-rate");
+        if (accelEl) accelEl.value = d.accel_rate ?? 8.0;
 
-        cfgPulseUs.value = d.pulse_us;
-        cfgPulseUsV.textContent = d.pulse_us;
+        if (cfgDeadZone) { cfgDeadZone.value = d.dead_zone; }
+        if (cfgDeadZoneV) cfgDeadZoneV.textContent = d.dead_zone;
 
-        cfgTimeout.value = d.cmd_timeout_ms;
-        cfgTimeoutV.textContent = d.cmd_timeout_ms;
+        if (cfgTimeout) { cfgTimeout.value = d.cmd_timeout_ms; }
+        if (cfgTimeoutV) cfgTimeoutV.textContent = d.cmd_timeout_ms;
 
-        cfgM1Btn.dataset.active = d.m1_invert.toString();
-        cfgM1Btn.textContent    = d.m1_invert ? "ON" : "OFF";
-        cfgM1Btn.classList.toggle("cfg-toggle-active", d.m1_invert);
-
-        cfgM2Btn.dataset.active = d.m2_invert.toString();
-        cfgM2Btn.textContent    = d.m2_invert ? "ON" : "OFF";
-        cfgM2Btn.classList.toggle("cfg-toggle-active", d.m2_invert);
-    } catch(e) {}
+        if (cfgM1Btn) {
+            cfgM1Btn.dataset.active = d.m1_invert.toString();
+            cfgM1Btn.textContent    = d.m1_invert ? "ON" : "OFF";
+            cfgM1Btn.classList.toggle("cfg-toggle-active", d.m1_invert);
+        }
+        if (cfgM2Btn) {
+            cfgM2Btn.dataset.active = d.m2_invert.toString();
+            cfgM2Btn.textContent    = d.m2_invert ? "ON" : "OFF";
+            cfgM2Btn.classList.toggle("cfg-toggle-active", d.m2_invert);
+        }
+    } catch(e) { console.warn('[loadMotorSettings]', e); }
 }
 
 loadMotorSettings();
 
 // 보드에 적용 (ESP32 / Arduino 공통 핸들러)
-document.getElementById("cfg-btn-apply").addEventListener("click", async () => {
+const cfgBtnApply = document.getElementById("cfg-btn-apply");
+if (cfgBtnApply) cfgBtnApply.addEventListener("click", async () => {
     const params = [
-        ["steps_per_px",   cfgStepsPx.value / 1000],
-        ["max_steps",      cfgMaxSteps.value],
-        ["dead_zone",      cfgDeadZone.value],
-        ["pulse_us",       cfgPulseUs.value],
-        ["cmd_timeout_ms", cfgTimeout.value],
-        ["m1_invert",      cfgM1Btn.dataset.active],
-        ["m2_invert",      cfgM2Btn.dataset.active],
+        ["dead_zone",      cfgDeadZone ? cfgDeadZone.value : 8],
+        ["cmd_timeout_ms", cfgTimeout  ? cfgTimeout.value  : 600],
+        ["m1_invert",      cfgM1Btn ? cfgM1Btn.dataset.active : 'false'],
+        ["m2_invert",      cfgM2Btn ? cfgM2Btn.dataset.active : 'false'],
     ];
 
     try {
-        // 1) 서버 state 업데이트 (ESP32·Arduino 공통)
         await Promise.all(params.map(([k, v]) =>
             fetch(`/set_motor_config?key=${k}&value=${v}`)
         ));
 
-        // 2) 보드별 시리얼 전송
         if (deviceType === "arduino") {
             const res = await fetch("/apply_arduino_cfg");
             if (!res.ok) throw new Error("NOT_CONNECTED");
-            cfgApplyMsg.textContent = "✓ Arduino에 적용 완료";
+            if (cfgApplyMsg) cfgApplyMsg.textContent = "✓ Arduino에 적용 완료";
         } else {
-            cfgApplyMsg.textContent = "✓ ESP32에 적용 완료";
+            if (cfgApplyMsg) cfgApplyMsg.textContent = "✓ ESP32에 적용 완료";
         }
-        cfgApplyMsg.style.color = "#30d158";
+        if (cfgApplyMsg) cfgApplyMsg.style.color = "#30d158";
     } catch(e) {
-        cfgApplyMsg.textContent = (e.message === "NOT_CONNECTED")
-            ? "✗ Arduino 연결 안됨"
-            : "✗ 적용 실패";
-        cfgApplyMsg.style.color = "#ff453a";
+        if (cfgApplyMsg) {
+            cfgApplyMsg.textContent = (e.message === "NOT_CONNECTED") ? "✗ Arduino 연결 안됨" : "✗ 적용 실패";
+            cfgApplyMsg.style.color = "#ff453a";
+        }
     }
-    setTimeout(() => { cfgApplyMsg.textContent = ""; }, 2500);
+    setTimeout(() => { if (cfgApplyMsg) cfgApplyMsg.textContent = ""; }, 2500);
 });
 
 // 기본값 복원
-document.getElementById("cfg-btn-reset").addEventListener("click", () => {
-    cfgStepsPx.value  = 60;   cfgStepsPxV.textContent  = "0.060";
-    cfgMaxSteps.value = 25;   cfgMaxStepsV.textContent  = "25";
-    cfgDeadZone.value = 8;    cfgDeadZoneV.textContent  = "8";
-    cfgPulseUs.value  = 5;    cfgPulseUsV.textContent   = "5";
-    cfgTimeout.value  = 600;  cfgTimeoutV.textContent   = "600";
-
-    cfgM1Btn.dataset.active = "false";
-    cfgM1Btn.textContent = "OFF";
-    cfgM1Btn.classList.remove("cfg-toggle-active");
-
-    cfgM2Btn.dataset.active = "false";
-    cfgM2Btn.textContent = "OFF";
-    cfgM2Btn.classList.remove("cfg-toggle-active");
+const cfgBtnReset = document.getElementById("cfg-btn-reset");
+if (cfgBtnReset) cfgBtnReset.addEventListener("click", () => {
+    if (cfgDeadZone)  { cfgDeadZone.value  = 8;   }
+    if (cfgDeadZoneV)   cfgDeadZoneV.textContent  = "8";
+    if (cfgTimeout)   { cfgTimeout.value   = 600; }
+    if (cfgTimeoutV)    cfgTimeoutV.textContent   = "600";
+    if (cfgM1Btn) { cfgM1Btn.dataset.active = "false"; cfgM1Btn.textContent = "OFF"; cfgM1Btn.classList.remove("cfg-toggle-active"); }
+    if (cfgM2Btn) { cfgM2Btn.dataset.active = "false"; cfgM2Btn.textContent = "OFF"; cfgM2Btn.classList.remove("cfg-toggle-active"); }
 });
 
 /* ==========================================

@@ -60,9 +60,13 @@ def connect(port=None, baudrate=115200):
         # 연결 직후 속도 & 가속도를 ESP32에 즉시 동기화 (1:5 기어비 기반 설정값)
         msl = int(state.esp32_max_speed_hz)
         acc = int(state.esp32_accel_rate * 10)  # ACC 명령은 x10 배율
+        m1i = 1 if state.motor_m1_invert else 0
+        m2i = 1 if state.motor_m2_invert else 0
         _send(f"CFG:MSL:{msl}\n")
         _send(f"CFG:ACC:{acc}\n")
-        print(f"[esp32] 초기 동기화: MSL={msl}Hz, ACC={state.esp32_accel_rate}Hz/ms")
+        _send(f"CFG:M1I:{m1i}\n")
+        _send(f"CFG:M2I:{m2i}\n")
+        print(f"[esp32] 초기 동기화: MSL={msl}Hz, ACC={state.esp32_accel_rate}Hz/ms, M1I={m1i}, M2I={m2i}")
     except Exception as e:
         print(f"[esp32] 연결 실패 ({port}): {e}")
         state.motor_connected = False

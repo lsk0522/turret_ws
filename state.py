@@ -30,7 +30,7 @@ motor_max_steps      = 25
 motor_steps_per_px   = 0.060
 motor_pulse_us       = 5
 motor_m1_invert      = False
-motor_m2_invert      = False
+motor_m2_invert      = True   # 수직(Tilt) 모터는 물리적으로 반전 — 기본값 True
 motor_cmd_timeout_ms = 600
 
 # ── ESP32 mm 위치 제어 ────────────────────────────────────
