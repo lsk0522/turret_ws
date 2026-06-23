@@ -103,7 +103,22 @@ def run(motor_id: int, degrees: float, max_speed: int, accel: int) -> bool:
 
 def estop() -> bool:
     """비상 정지 — 두 모터 즉시 STOP."""
-    return _send_packet({"id": 1, "cmd": "STOP"}) or _send_packet({"id": 2, "cmd": "STOP"})
+    ok1 = _send_packet({"id": 1, "cmd": "STOP"})
+    ok2 = _send_packet({"id": 2, "cmd": "STOP"})
+    return ok1 or ok2
+
+
+def safe_disconnect():
+    """Thread-safe disconnect for shutdown and controller switching."""
+    global _ser
+    with _lock:
+        if _ser and _ser.is_open:
+            try:
+                _ser.close()
+            except Exception:
+                pass
+        _ser = None
+    state.motor_connected = False
 
 
 def home(motor_id: int) -> bool:

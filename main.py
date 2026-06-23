@@ -7,25 +7,44 @@ from routes import setup_routes
 import detector
 import motor_esp32
 import motor_arduino
+import state
 
 
-def _shutdown(signum=None, frame=None):
+_cleaned_up = False
+
+
+def _cleanup_motors():
     """프로그램 종료 시 모터 홀딩 전류 해제 후 안전하게 종료."""
+    global _cleaned_up
+    if _cleaned_up:
+        return
+    _cleaned_up = True
     print("\n[main] 종료 시그널 수신 — 모터 해제 중...")
     try:
-        motor_esp32.release_motors()
+        if state.device_type == "arduino":
+            motor_arduino.estop()
+        else:
+            motor_esp32.release_motors()
     except Exception:
         pass
     try:
         motor_esp32.safe_disconnect()
     except Exception:
         pass
+    try:
+        motor_arduino.safe_disconnect()
+    except Exception:
+        pass
     print("[main] 모터 해제 완료. 종료합니다.")
+
+
+def _shutdown(signum=None, frame=None):
+    _cleanup_motors()
     sys.exit(0)
 
 
 # 정상/비정상 종료 모두 대응
-atexit.register(lambda: motor_esp32.release_motors())
+atexit.register(_cleanup_motors)
 signal.signal(signal.SIGINT,  _shutdown)   # Ctrl+C
 signal.signal(signal.SIGTERM, _shutdown)   # 프로세스 kill
 

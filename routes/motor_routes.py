@@ -10,7 +10,13 @@ bp = Blueprint('motor', __name__)
 @bp.route('/motor_status')
 def motor_status():
     tx, ty = state.point[0], state.point[1]
-    ex, ey = tx - 320, ty - 240
+    frame = state.current_frame
+    if frame is not None:
+        frame_h, frame_w = frame.shape[:2]
+        center_x, center_y = frame_w // 2, frame_h // 2
+    else:
+        center_x, center_y = 320, 240
+    ex, ey = tx - center_x, ty - center_y
     steps1 = int(state.esp32_pos_m1_mm * state.esp32_steps_per_mm_m1)
     steps2 = int(state.esp32_pos_m2_mm * state.esp32_steps_per_mm_m2)
     moving = (abs(state.esp32_speed_m1) > 0.1 or abs(state.esp32_speed_m2) > 0.1)
@@ -73,6 +79,8 @@ def set_esp32_mm_config():
         'steps_per_mm_m2': ('esp32_steps_per_mm_m2', float, 'SPM2', lambda v: int(v * 10)),
         'max_speed_hz':    ('esp32_max_speed_hz',    float, 'MSL',  int),
         'accel_rate':      ('esp32_accel_rate',      float, 'ACC',  lambda v: int(v * 10)),
+        'steps_per_pix':   ('motor_steps_per_px',    float, 'SPX',  lambda v: int(v * 1000)),
+        'steps_per_px':    ('motor_steps_per_px',    float, 'SPX',  lambda v: int(v * 1000)),
         'pulse_us':        ('motor_pulse_us',         int,   'PU',   int),
         'm1_invert':       ('motor_m1_invert',        lambda v: v.lower() == 'true', 'M1I', lambda v: 1 if v else 0),
         'm2_invert':       ('motor_m2_invert',        lambda v: v.lower() == 'true', 'M2I', lambda v: 1 if v else 0),

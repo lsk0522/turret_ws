@@ -5,7 +5,6 @@ import numpy as np
 import time
 
 import state
-from camera import FRAME_W, FRAME_H
 
 # 학습 영역: 640x480 프레임 중앙 300x300
 _DEFAULT_LEARN_ZONE = (170, 90, 300, 300)   # (x, y, w, h)
@@ -268,8 +267,9 @@ class CSRTTracker:
         cy = y + h // 2
         
         # 바운딩 박스 화면 이탈 방지
-        x = max(0, min(FRAME_W - 1, x))
-        y = max(0, min(FRAME_H - 1, y))
+        frame_h, frame_w = frame.shape[:2]
+        x = max(0, min(frame_w - 1, x))
+        y = max(0, min(frame_h - 1, y))
         
         return {
             "cx": cx, "cy": cy,
@@ -410,9 +410,12 @@ def _run():
         if state.control_mode == "auto" and state.ball:
             tx = state.ball.get("predicted_cx", state.ball["cx"])
             ty = state.ball.get("predicted_cy", state.ball["cy"])
-            # P-Controller: 현재 모터 좌표(state.point)에서 중앙(320, 240)을 기준으로 오차만큼 부드럽게 이동
-            err_x = tx - 320
-            err_y = ty - 240
+            frame_h, frame_w = frame.shape[:2]
+            center_x = frame_w / 2
+            center_y = frame_h / 2
+            # P-Controller: 현재 모터 좌표(state.point)에서 프레임 중앙 기준 오차만큼 부드럽게 이동
+            err_x = tx - center_x
+            err_y = ty - center_y
             
             # P-gain 설정 (0.1 ~ 0.5): 높을수록 빨리, 낮을수록 부드럽게
             p_gain_x = 0.15
@@ -421,8 +424,8 @@ def _run():
             new_x = state.point[0] + (err_x * p_gain_x)
             new_y = state.point[1] + (err_y * p_gain_y)
             
-            state.point[0] = max(0, min(FRAME_W - 1, int(new_x)))
-            state.point[1] = max(0, min(FRAME_H - 1, int(new_y)))
+            state.point[0] = max(0, min(frame_w - 1, int(new_x)))
+            state.point[1] = max(0, min(frame_h - 1, int(new_y)))
 
 def start():
     global _thread

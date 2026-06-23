@@ -109,7 +109,7 @@ def set_camera_resolution(width: int, height: int):
         FRAME_H = height
         if _cap and _cap.isOpened():
             _cap.release()
-            _cap = _open_camera(_camera_index)
+        _cap = _open_camera(_camera_index)
     return not _is_dummy
 
 
@@ -120,7 +120,7 @@ def set_camera_fps(fps: int):
         FRAME_FPS = fps
         if _cap and _cap.isOpened():
             _cap.release()
-            _cap = _open_camera(_camera_index)
+        _cap = _open_camera(_camera_index)
     return not _is_dummy
 
 
