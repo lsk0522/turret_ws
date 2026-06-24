@@ -25,7 +25,6 @@ _ser_lock = threading.Lock()
 _seq_counter         = 0
 _seq_lock            = threading.Lock()
 _first_pos_sync      = True
-_queue_worker_thread = None
 _abort_event         = threading.Event()
 
 # ESP32 USB VID (CP210x, CH340, FTDI)
@@ -287,9 +286,8 @@ def stop_motors():
 
 
 def start(port=None):
-    global _thread, _queue_worker_thread
+    global _thread,
     connect(port)
     _thread = threading.Thread(target=_run, daemon=True)
     _thread.start()
-    _queue_worker_thread = threading.Thread(target=_queue_worker, daemon=True)
-    _queue_worker_thread.start()
+
