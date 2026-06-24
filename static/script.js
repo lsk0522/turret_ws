@@ -252,12 +252,37 @@ setInterval(async () => {
 
 let lastSync = 0;
 
+let _isFetchingClick = false;
+let _pendingClickX = null;
+let _pendingClickY = null;
+
+function sendClick(x, y) {
+    if (_isFetchingClick) {
+        _pendingClickX = Math.round(x);
+        _pendingClickY = Math.round(y);
+        return;
+    }
+    _isFetchingClick = true;
+    _pendingClickX = null;
+    _pendingClickY = null;
+    
+    fetch(`/click?x=${Math.round(x)}&y=${Math.round(y)}`)
+        .catch(()=>{})
+        .finally(() => {
+            _isFetchingClick = false;
+            if (_pendingClickX !== null) {
+                setTimeout(() => sendClick(_pendingClickX, _pendingClickY), 5);
+            }
+        });
+}
+
 function syncServer(){
     const now = Date.now();
     if(now - lastSync < 50) return;
     lastSync = now;
-    fetch(`/click?x=${Math.round(tPx)}&y=${Math.round(tPy)}`).catch(()=>{});
+    sendClick(tPx, tPy);
 }
+
 
 async function syncPos(){
     // 자동 모드일 때는 모터 위치(/pos)로 크로스헤어를 옮기지 않음
@@ -347,7 +372,7 @@ function resetStick(){
     if (inputMode === "joystick") {
         tPx = 320;
         tPy = 240;
-        fetch(`/click?x=320&y=240`).catch(()=>{});
+        sendClick(320, 240);
     }
     lastSync = Date.now();
 }
@@ -459,15 +484,15 @@ function loop(timestamp){
                 tPy = 240 + joyVy * maxSpeed * 6;
                 
                 const now = Date.now();
-                if (now - lastSync > 40) {
-                    fetch(`/click?x=${Math.round(tPx)}&y=${Math.round(tPy)}`).catch(()=>{});
+                if (now - lastSync > 60) {
+                    sendClick(tPx, tPy);
                     lastSync = now;
                 }
             } else if (tPx !== 320 || tPy !== 240) {
                 // 조이스틱을 놨을 때 즉각 중앙 타겟 전송하여 모터 즉시 정지
                 tPx = 320;
                 tPy = 240;
-                fetch(`/click?x=320&y=240`).catch(()=>{});
+                sendClick(320, 240);
                 lastSync = Date.now();
             }
         }
