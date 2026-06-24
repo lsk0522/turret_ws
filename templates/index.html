@@ -128,15 +128,13 @@
             <div id="settings-content">
                 <div class="setting-item">
                     <label>조작 모드</label>
-                    <div class="segmented-control" id="control-mode-segment" style="--seg-count:3;">
-                        <div class="segment-slider" style="width:calc(33.33% - 2px)"></div>
-                        <button class="segment-btn" data-value="pointer">👆 포인터</button>
+                    <div class="segmented-control" id="control-mode-segment" style="--seg-count:2;">
+                        <div class="segment-slider" style="width:calc(50% - 2px)"></div>
                         <button class="segment-btn active" data-value="joystick">🕹️ 조이스틱</button>
                         <button class="segment-btn" data-value="auto">🤖 AI 추적</button>
                     </div>
                     <!-- Hidden select for compatibility -->
                     <select id="control-mode" style="display:none;">
-                        <option value="pointer">포인터 제어</option>
                         <option value="joystick" selected>조이스틱 수동</option>
                         <option value="auto">AI 자동 추적</option>
                     </select>

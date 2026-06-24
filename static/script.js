@@ -309,24 +309,23 @@ let _joyLastSend = 0;
 function checkJoystickDir() {
     if (inputMode !== "joystick") return;
     
-    let newDirX = 0;
-    if (joyVx > 0.3) newDirX = 1;
-    else if (joyVx < -0.3) newDirX = -1;
+    let newDirX = joyVx;
+    if (Math.abs(newDirX) < 0.05) newDirX = 0;
     
-    let newDirY = 0;
-    if (joyVy > 0.3) newDirY = 1;
-    else if (joyVy < -0.3) newDirY = -1;
+    let newDirY = joyVy;
+    if (Math.abs(newDirY) < 0.05) newDirY = 0;
     
     const now = Date.now();
-    const dirChanged = (newDirX !== joyDirX || newDirY !== joyDirY);
-    // 조이스틱을 누르고 있는 동안 매 80ms마다 재전송 (모터가 dist를 다 소진 후 멈춰도 다시 구동)
-    const shouldResend = (newDirX !== 0 || newDirY !== 0) && (now - _joyLastSend > 80);
+    // 작은 변화에도 즉각 반응하도록 임계값 낮춤
+    const dirChanged = (Math.abs(newDirX - joyDirX) > 0.02 || Math.abs(newDirY - joyDirY) > 0.02);
+    // 조이스틱을 누르고 있는 동안 매 30ms(초당 약 33번)마다 초고속 재전송하여 딜레이 제로화
+    const shouldResend = (newDirX !== 0 || newDirY !== 0) && (now - _joyLastSend > 30);
     
     if (dirChanged || shouldResend) {
         joyDirX = newDirX;
         joyDirY = newDirY;
         _joyLastSend = now;
-        fetch(`/joystick_dir?x=${joyDirX}&y=${joyDirY}`).catch(()=>{});
+        fetch(`/joystick_dir?x=${joyDirX.toFixed(3)}&y=${joyDirY.toFixed(3)}`).catch(()=>{});
     }
 }
 
@@ -350,6 +349,7 @@ function updateStick(tx, ty){
     joyVy = dy / maxDist;
     
     // checkJoystickDir(); // removed to prevent overlap with syncServer
+    checkJoystickDir(); // Re-enabled for proper velocity control
 }
 
 function resetStick(){
@@ -363,13 +363,15 @@ function resetStick(){
     joyVy = 0;
     joystickTouchId = null;
 
-    if (inputMode === "joystick" && (joyDirX !== 0 || joyDirY !== 0)) {
-        joyDirX = 0;
-        joyDirY = 0;
-        fetch(`/joystick_dir?x=0&y=0`).catch(()=>{});
+    if (inputMode === "joystick") {
+        if (joyDirX !== 0 || joyDirY !== 0) {
+            joyDirX = 0;
+            joyDirY = 0;
+            fetch(`/joystick_dir?x=0&y=0`).catch(()=>{});
+        }
+    } else {
+        fetch(`/click?x=${Math.round(tPx)}&y=${Math.round(tPy)}`).catch(()=>{});
     }
-
-    fetch(`/click?x=${Math.round(tPx)}&y=${Math.round(tPy)}`).catch(()=>{});
     lastSync = Date.now();
 }
 
@@ -469,28 +471,12 @@ function loop(timestamp){
     _lastFrameTime = timestamp;
 
     if (controlMode === "manual") {
-        if (inputMode !== "joystick") {
-            // Pointer mode: smooth lerp using delta-time (frame-rate independent)
-            const factor = 1 - Math.pow(0.70, dt);
-            px += (tPx - px) * factor;
-            py += (tPy - py) * factor;
-        } else {
-            // 조이스틱 모드: 기울기 × 감도(maxSpeed)에 비례한 속도로 커서를 밀어줌
-            // maxSpeed(1~20)  →  픽셀/프레임 속도: 1=1.5px, 20=30px
-            const joySpeed = maxSpeed * 1.5;
-            tPx += joyVx * joySpeed * dt;
-            tPy += joyVy * joySpeed * dt;
-            tPx = Math.max(0, Math.min(639, tPx));
-            tPy = Math.max(0, Math.min(479, tPy));
-            // 커서 렌더링은 tPx/tPy로 부드럽게 lerp
-            const factor = 1 - Math.pow(0.70, dt);
-            px += (tPx - px) * factor;
-            py += (tPy - py) * factor;
-            // 조이스틱이 움직이는 중에만 서버로 좌표 전송 (throttled 50ms)
-            if (Math.abs(joyVx) > 0.05 || Math.abs(joyVy) > 0.05) {
-                syncServer();
-            }
-        }
+        // 수동 조이스틱 모드: 항상 십자선을 중앙(320, 240)에 고정
+        tPx = 320;
+        tPy = 240;
+        const factor = 1 - Math.pow(0.70, dt);
+        px += (tPx - px) * factor;
+        py += (tPy - py) * factor;
     } else {
         // 자동 모드: 서버 갱신(80ms)을 lerp로 보간 → 끊김 없음
         px += (tPx - px) * 0.20;
@@ -597,7 +583,6 @@ const hiddenSelect       = document.getElementById("control-mode");
 // Header indicator elements
 const liveIndicator     = document.getElementById("live-indicator");
 const trackingIndicator = document.getElementById("tracking-indicator");
-const pointerIndicator  = document.getElementById("pointer-indicator");
 const trackingDot       = document.getElementById("tracking-dot");
 const trackingLabel     = document.getElementById("tracking-label");
 
@@ -625,7 +610,6 @@ function setInputModeUI(mode) {
 
     // Update header indicators
     if (liveIndicator)     liveIndicator.style.display    = (mode === "joystick") ? "flex" : "none";
-    if (pointerIndicator)  pointerIndicator.style.display = (mode === "pointer")  ? "flex" : "none";
     if (trackingIndicator) trackingIndicator.style.display = (mode === "auto")    ? "flex" : "none";
 
     // Toggle joystick visibility
@@ -633,15 +617,6 @@ function setInputModeUI(mode) {
     if (joystickBase) {
         joystickBase.style.opacity      = (mode === "joystick") ? "1" : "0";
         joystickBase.style.pointerEvents = (mode === "joystick") ? "" : "none";
-    }
-
-    // Toggle canvas pointer events for pointer mode (use CSS class, not inline style)
-    if (canvas) {
-        if (mode === "pointer") {
-            canvas.classList.add("pointer-mode-active");
-        } else {
-            canvas.classList.remove("pointer-mode-active");
-        }
     }
 
     // Reset joystick when leaving joystick mode
@@ -697,56 +672,6 @@ function updateTrackingUI(locked) {
 }
 
 /* ── Mode 1: Pointer Control (canvas click/touch) ─────────────── */
-// Canvas click → move crosshair to clicked position
-canvas.addEventListener("click", (e) => {
-    if (inputMode !== "pointer") return;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = 640 / rect.width;
-    const scaleY = 480 / rect.height;
-    tPx = (e.clientX - rect.left) * scaleX;
-    tPy = (e.clientY - rect.top)  * scaleY;
-    tPx = Math.max(0, Math.min(639, tPx));
-    tPy = Math.max(0, Math.min(479, tPy));
-    px = tPx; py = tPy;
-    syncServer();
-});
-
-// Canvas touch → move crosshair (mobile pointer mode)
-canvas.addEventListener("touchstart", (e) => {
-    if (inputMode !== "pointer") return;
-    e.preventDefault();
-    const t    = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = 640 / rect.width;
-    const scaleY = 480 / rect.height;
-    tPx = (t.clientX - rect.left) * scaleX;
-    tPy = (t.clientY - rect.top)  * scaleY;
-    tPx = Math.max(0, Math.min(639, tPx));
-    tPy = Math.max(0, Math.min(479, tPy));
-    px = tPx; py = tPy;
-    syncServer();
-}, { passive: false });
-
-// Canvas drag in pointer mode
-let _pointerDragging = false;
-canvas.addEventListener("mousedown", (e) => {
-    if (inputMode !== "pointer") return;
-    _pointerDragging = true;
-});
-canvas.addEventListener("mousemove", (e) => {
-    if (inputMode !== "pointer" || !_pointerDragging) return;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = 640 / rect.width;
-    const scaleY = 480 / rect.height;
-    tPx = (e.clientX - rect.left) * scaleX;
-    tPy = (e.clientY - rect.top)  * scaleY;
-    tPx = Math.max(0, Math.min(639, tPx));
-    tPy = Math.max(0, Math.min(479, tPy));
-    px = tPx; py = tPy;
-    syncServer();
-});
-canvas.addEventListener("mouseup",   () => { _pointerDragging = false; });
-canvas.addEventListener("mouseleave", () => { _pointerDragging = false; });
 
 
 
@@ -988,7 +913,6 @@ function _startLearnPoll() {
     // Force live indicator visible and update to LEARNING state
     if (liveIndicator)     liveIndicator.style.display    = "flex";
     if (trackingIndicator) trackingIndicator.style.display = "none";
-    if (pointerIndicator)  pointerIndicator.style.display  = "none";
     const statusLabel = document.querySelector(".status-label");
     const statusDot   = document.querySelector(".status-dot");
     if (statusLabel && statusDot) {

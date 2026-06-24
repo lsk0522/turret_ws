@@ -158,8 +158,8 @@ def setup_routes(app):
         """Joystick 8-direction control — enqueue large relative move then stop on release."""
         import motor_esp32 as esp
         try:
-            x = int(request.args.get('x', 0))
-            y = int(request.args.get('y', 0))
+            x = float(request.args.get('x', 0))
+            y = float(request.args.get('y', 0))
         except (TypeError, ValueError):
             return "INVALID", 400
 
