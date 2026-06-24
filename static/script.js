@@ -307,26 +307,7 @@ let joyDirY = 0;
 let _joyLastSend = 0;
 
 function checkJoystickDir() {
-    if (inputMode !== "joystick") return;
-    
-    let newDirX = joyVx;
-    if (Math.abs(newDirX) < 0.05) newDirX = 0;
-    
-    let newDirY = joyVy;
-    if (Math.abs(newDirY) < 0.05) newDirY = 0;
-    
-    const now = Date.now();
-    // 작은 변화에도 즉각 반응하도록 임계값 낮춤
-    const dirChanged = (Math.abs(newDirX - joyDirX) > 0.02 || Math.abs(newDirY - joyDirY) > 0.02);
-    // 조이스틱을 누르고 있는 동안 매 30ms(초당 약 33번)마다 초고속 재전송하여 딜레이 제로화
-    const shouldResend = (newDirX !== 0 || newDirY !== 0) && (now - _joyLastSend > 30);
-    
-    if (dirChanged || shouldResend) {
-        joyDirX = newDirX;
-        joyDirY = newDirY;
-        _joyLastSend = now;
-        fetch(`/joystick_dir?x=${joyDirX.toFixed(3)}&y=${joyDirY.toFixed(3)}`).catch(()=>{});
-    }
+    // Deprecated: Joystick directly mapped to /click in loop() for zero-delay velocity control
 }
 
 function updateStick(tx, ty){
@@ -364,13 +345,9 @@ function resetStick(){
     joystickTouchId = null;
 
     if (inputMode === "joystick") {
-        if (joyDirX !== 0 || joyDirY !== 0) {
-            joyDirX = 0;
-            joyDirY = 0;
-            fetch(`/joystick_dir?x=0&y=0`).catch(()=>{});
-        }
-    } else {
-        fetch(`/click?x=${Math.round(tPx)}&y=${Math.round(tPy)}`).catch(()=>{});
+        tPx = 320;
+        tPy = 240;
+        fetch(`/click?x=320&y=240`).catch(()=>{});
     }
     lastSync = Date.now();
 }
@@ -471,12 +448,29 @@ function loop(timestamp){
     _lastFrameTime = timestamp;
 
     if (controlMode === "manual") {
-        // 수동 조이스틱 모드: 항상 십자선을 중앙(320, 240)에 고정
-        tPx = 320;
-        tPy = 240;
-        const factor = 1 - Math.pow(0.70, dt);
-        px += (tPx - px) * factor;
-        py += (tPy - py) * factor;
+        // 수동 조이스틱 모드: 십자선은 항상 중앙(320, 240)에 렌더링
+        px = 320;
+        py = 240;
+        
+        if (inputMode === "joystick") {
+            // 조이스틱의 위치값을 직접 가상 타겟(tPx, tPy)의 오프셋으로 변환 (속도 제어)
+            if (Math.abs(joyVx) > 0.05 || Math.abs(joyVy) > 0.05) {
+                tPx = 320 + joyVx * maxSpeed * 6; // maxSpeed에 비례한 오프셋
+                tPy = 240 + joyVy * maxSpeed * 6;
+                
+                const now = Date.now();
+                if (now - lastSync > 40) {
+                    fetch(`/click?x=${Math.round(tPx)}&y=${Math.round(tPy)}`).catch(()=>{});
+                    lastSync = now;
+                }
+            } else if (tPx !== 320 || tPy !== 240) {
+                // 조이스틱을 놨을 때 즉각 중앙 타겟 전송하여 모터 즉시 정지
+                tPx = 320;
+                tPy = 240;
+                fetch(`/click?x=320&y=240`).catch(()=>{});
+                lastSync = Date.now();
+            }
+        }
     } else {
         // 자동 모드: 서버 갱신(80ms)을 lerp로 보간 → 끊김 없음
         px += (tPx - px) * 0.20;
