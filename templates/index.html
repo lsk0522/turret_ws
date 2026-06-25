@@ -512,7 +512,7 @@
                         <div class="segmented-control" id="esp32-mode-segment" style="margin-bottom:0;">
                             <div class="segment-slider"></div>
                             <button class="segment-btn active" data-value="track">📷 카메라 추적</button>
-                            <button class="segment-btn" data-value="pos">📏 위치 제어 (mm)</button>
+                            <button class="segment-btn" data-value="pos">📐 각도 제어 (°)</button>
                         </div>
                     </div>
 
@@ -582,7 +582,7 @@
                         <div class="klipper-pos-card">
                             <div class="klipper-pos-axis">
                                 <div class="klipper-pos-label">M1 · Pan</div>
-                                <div class="klipper-pos-value" id="kp-m1-val">— mm</div>
+                                <div class="klipper-pos-value" id="kp-m1-val">— °</div>
                                 <div class="klipper-pos-bar-wrap">
                                     <div class="klipper-pos-bar">
                                         <div class="klipper-pos-fill" id="kp-m1-fill" style="width:50%"></div>
@@ -593,7 +593,7 @@
                             </div>
                             <div class="klipper-pos-axis">
                                 <div class="klipper-pos-label">M2 · Tilt</div>
-                                <div class="klipper-pos-value" id="kp-m2-val">— mm</div>
+                                <div class="klipper-pos-value" id="kp-m2-val">— °</div>
                                 <div class="klipper-pos-bar-wrap">
                                     <div class="klipper-pos-bar">
                                         <div class="klipper-pos-fill" id="kp-m2-fill" style="width:50%"></div>
@@ -607,7 +607,7 @@
                         <!-- 모터 선택 탭 (M1 / M2 / Both) -->
                         <div class="setting-item" style="margin-top:14px;">
                             <label>이동 축 선택</label>
-                            <div class="segmented-control" id="mm-axis-segment">
+                            <div class="segmented-control" id="deg-axis-segment">
                                 <div class="segment-slider" style="width:calc(33.33% - 2px)"></div>
                                 <button class="segment-btn active" data-value="M1">M1 Pan</button>
                                 <button class="segment-btn" data-value="M2">M2 Tilt</button>

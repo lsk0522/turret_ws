@@ -1728,7 +1728,7 @@ let esp32Mode = "track";         // 현재 ESP32 모드
 const esp32ModeSegment = document.getElementById("esp32-mode-segment");
 const esp32TrackTab    = document.getElementById("esp32-track-tab");
 const esp32PosTab      = document.getElementById("esp32-pos-tab");
-const mmAxisSegment    = document.getElementById("mm-axis-segment");
+const degAxisSegment    = document.getElementById("deg-axis-segment");
 const kpAbsInput       = document.getElementById("kp-abs-input");
 const kpAbsGo          = document.getElementById("kp-abs-go");
 const kpSethomeBtn     = document.getElementById("kp-sethome-btn");
@@ -1767,13 +1767,13 @@ if (esp32ModeSegment) {
 }
 
 // ── 축 선택 세그먼트 ─────────────────────────────────────────────────────────────
-if (mmAxisSegment) {
-    mmAxisSegment.addEventListener("click", e => {
+if (degAxisSegment) {
+    degAxisSegment.addEventListener("click", e => {
         const btn = e.target.closest(".segment-btn");
         if (!btn) return;
-        const btns  = [...mmAxisSegment.querySelectorAll(".segment-btn")];
+        const btns  = [...degAxisSegment.querySelectorAll(".segment-btn")];
         const idx   = btns.indexOf(btn);
-        const slider = mmAxisSegment.querySelector(".segment-slider");
+        const slider = degAxisSegment.querySelector(".segment-slider");
         btns.forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         slider.style.transform = `translateX(${idx * 100}%)`;
