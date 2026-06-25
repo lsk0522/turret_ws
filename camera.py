@@ -187,14 +187,10 @@ def gen_frames():
 
         if last_buffer is not None:
             yield (
-                b'--frame
-'
-                b'Content-Type: image/jpeg
-
-' +
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' +
                 last_buffer.tobytes() +
-                b'
-'
+                b'\r\n'
             )
 
 def gen_debug_frames():
@@ -252,12 +248,8 @@ def gen_debug_frames():
 
         if last_buffer is not None:
             yield (
-                b'--frame
-'
-                b'Content-Type: image/jpeg
-
-' +
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' +
                 last_buffer.tobytes() +
-                b'
-'
+                b'\r\n'
             )

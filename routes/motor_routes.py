@@ -12,7 +12,8 @@ def motor_status():
     tx, ty = state.point[0], state.point[1]
     frame = state.current_frame
     if frame is not None:
-        frame_h, frame_w = frame.shape[:2]
+        frame_h = frame.shape[0]
+        frame_w = frame.shape[1]
         center_x, center_y = frame_w // 2, frame_h // 2
     else:
         center_x, center_y = 320, 240
@@ -75,8 +76,8 @@ def set_esp32_deg_config():
     key   = request.args.get('key', '')
     value = request.args.get('value', '')
     _CFG = {
-        'steps_per_deg_m1': ('esp32_steps_per_deg_m1', float, 'SPM1', lambda v: int(v * 10)),
-        'steps_per_deg_m2': ('esp32_steps_per_deg_m2', float, 'SPM2', lambda v: int(v * 10)),
+        'steps_per_deg_m1': ('esp32_steps_per_deg_m1', float, 'SPD1', lambda v: int(v * 10)),
+        'steps_per_deg_m2': ('esp32_steps_per_deg_m2', float, 'SPD2', lambda v: int(v * 10)),
         'max_speed_hz':    ('esp32_max_speed_hz',    float, 'MSL',  int),
         'accel_rate':      ('esp32_accel_rate',      float, 'ACC',  lambda v: int(v * 10)),
         'steps_per_pix':   ('motor_steps_per_px',    float, 'SPX',  lambda v: int(v * 1000)),
@@ -148,7 +149,7 @@ def esp32_move():
             ok = esp.move_deg(target, float(request.args.get('mm', 0)))
         except ValueError:
             return "INVALID MM", 400
-    return ("OK" if ok else ("NOT_CONNECTED", 503))
+    return "OK"
 
 
 @bp.route('/esp32_sethome')
@@ -324,3 +325,13 @@ def firmware_mode():
         motor_esp32.start()
         return jsonify(ok=True, mode="normal")
 
+@bp.route('/firmware_status')
+def firmware_status():
+    expected = state.EXPECTED_FIRMWARE_VERSION
+    actual   = state.firmware_version_actual
+    match    = (actual == expected) if actual else True
+    return jsonify(
+        match=match,
+        expected=expected,
+        actual=actual if actual else expected
+    )

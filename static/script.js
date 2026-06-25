@@ -74,6 +74,7 @@ let controlMode = "manual";
 let joyVx = 0;
 let joyVy = 0;
 let joystickTouchId = null;
+let _joySent = false;  // ← 이 줄 추가
 
 /* 학습 모드 상태 — drawCrosshair에서 참조하므로 loop() 전에 선언 */
 let learningMode    = false;
@@ -482,14 +483,14 @@ function loop(timestamp){
             if (now - lastSync > 30) {
                 if (Math.abs(joyVx) > 0.05 || Math.abs(joyVy) > 0.05) {
                     // maxSpeed(1~20, 기본 5)를 곱해서 속도 비례 전송
-                    let speedMult = maxSpeed / 5.0; 
+                    let speedMult = maxSpeed / 5.0;
                     fetch(`/joystick_dir?x=${(joyVx * speedMult).toFixed(3)}&y=${(joyVy * speedMult).toFixed(3)}`).catch(()=>{});
                     lastSync = now;
-                    tPx = 321; // 이동 중 플래그
-                } else if (tPx !== 320) {
+                    _joySent = true;
+                } else if (_joySent) {
                     fetch(`/joystick_dir?x=0&y=0`).catch(()=>{});
                     lastSync = now;
-                    tPx = 320; // 정지 플래그
+                    _joySent = false;
                 }
             }
         }

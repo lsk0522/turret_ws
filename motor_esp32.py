@@ -1,14 +1,18 @@
 """ESP32 + DM542 스텝모터 시리얼 통신 — 통합 펌웨어 대응 (thread-safe)"""
 
-import threading
 import time
-import queue
+import threading
+from queue import Queue
+
+# Pylance 에러를 해결하기 위한 전역 변수 선언 (이 부분이 누락되었을 확률이 높습니다)
+_move_queue = Queue()
+_abort_event = threading.Event()
 
 import state
 from serial_utils import find_port
 
 try:
-    import serial
+    import serial   
     _serial_ok = True
 except ImportError:
     serial = None  # type: ignore
@@ -249,14 +253,14 @@ def _get_next_seq():
 
 
 def move_deg(target: str, mm: float):
-    """절대 위치 이동 (큐 추가)."""
-    return enqueue_move(target, mm, is_absolute=True)
+    """절대 위치 이동."""
+    _send(f"MOVE J {target} {mm:.3f}\n")
 
 
 def move_relative_deg(target: str, delta: float):
-    """상대 위치 이동 (큐 추가)."""
-    return enqueue_move(target, delta, is_absolute=False)
-
+    """상대 위치 이동."""
+    cur = state.esp32_pos_m1_deg if target == "M1" else state.esp32_pos_m2_deg
+    _send(f"MOVE J {target} {cur + delta:.3f}\n")
 
 def set_home():
     """현재 위치를 원점(0mm)으로 설정."""

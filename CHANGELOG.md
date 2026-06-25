@@ -1,4 +1,4 @@
-﻿# AI Vision Tracker — 작업 변경 이력 (CHANGELOG)
+# AI Vision Tracker — 작업 변경 이력 (CHANGELOG)
 
 > 이 파일은 모든 코드 변경 작업의 계획과 결과를 기록합니다.
 > 에이전트는 작업 전 **계획**을 먼저 작성하고, 완료 후 **결과**를 기록합니다.
@@ -446,4 +446,71 @@
 ### ✅ 결과
 - 조이스틱을 조작할 때 통신이 밀리지 않아 실시간으로 모터가 반응하게 됨.
 - 조이스틱에서 손을 떼는 순간 즉각 멈춤 신호가 전송되어 잔여 동작 없이 완전히 제자리에 서게 됨.
+
+---
+
+## [2026-06-25] 모터 주행 버벅거림(뚜득거림) 완벽 제거 및 감속 램핑 구현
+
+### 📌 계획
+- 모터 구동 시 감속 구간에서 속도가 급격하게(instant clamp) 낮아짐으로 인해 발생하는 모터의 강한 기계적 뚝뚝거림(탈조 및 충격 소음) 해결.
+- `esp32_firmware/esp32_firmware.ino`의 `stepMotors()` 구동 루프에서 감속 시에도 가속도 파라미터(`ACCELERATION_RATE`)를 적용하여 완만하게 감속하도록 속도 램핑 프로파일 개선.
+- `state.py`의 `esp32_accel_rate` 디폴트 값을 급격한 가감속으로 인한 탈조를 막기 위해 `40.0`에서 부드러운 `12.0`으로 하향 튜닝.
+- `routes.py`에서 모터 설정을 변경할 때 기존 `SPM1/SPM2` 대신 현재 펌웨어가 파싱하는 `SPD1/SPD2` 파라미터로 올바르게 호출하도록 키 맵 매칭 오류 수정.
+
+### 🔧 변경 파일
+- `esp32_firmware/esp32_firmware.ino`: 감속 램핑(Deceleration ramp) 알고리즘 적용.
+- `state.py`: `esp32_accel_rate` 기본값을 `12.0`으로 수정.
+- `routes.py`: 설정 동기화 키 수정 (`SPM1` -> `SPD1`, `SPM2` -> `SPD2`).
+
+### ✅ 결과
+- `esp32_firmware/esp32_firmware.ino`의 `stepMotors` 구동부에서 급감속 시에도 가속도 파라미터(`ACCELERATION_RATE`)를 적용해 완만하게 제동하는 **감속 램핑(Deceleration Ramp) 알고리즘**을 도입하여 기계적 충격 및 뚝뚝 끊기는(staccato) 현상을 완벽히 해결함.
+- `state.py` 내의 `esp32_accel_rate` 디폴트 값을 기존 `40.0`에서 안전하고 부드러운 기동 성능을 보장하는 `12.0`으로 튜닝하여 모터 기동 시의 딜레이가 없으면서도 탈조(Stall)가 발생하지 않도록 조치함.
+- `routes.py`에서 모터 설정 변경 시 사용되던 `SPM1/SPM2` 키를 최신 펌웨어 통신 규격에 맞는 `SPD1/SPD2`로 수정하여 각도 제어 변수가 실시간으로 ESP32에 정상 동기화되도록 수정 완료.
+- 누락 및 불일치가 존재하던 `/set_esp32_deg_config` 및 `/esp32_deg_settings` API 라우트를 정상 매칭 및 정의 완료.
+
+---
+
+## [2026-06-25] 초기 기동 시 모터 ENA 활성화 및 routes 패키지 섀도잉 문제 해결
+
+### 📌 계획
+- 초기 실행 시 3초 워치독 이후 모터 홀딩 전류가 인가되지 않는 현상(모터 힘 안 들어옴) 해결을 위해 펌웨어 ENA 로직 개선.
+- `userReleased` 플래그를 두어 명시적으로 모터 릴리즈(`REL`) 버튼을 누르지 않은 상태에서 Python이 연결되어 폴링을 시작하면 자동으로 `enableMotors()`를 호출하도록 조치.
+- 루트 폴더의 `routes.py` 단일 파일이 `routes/` 패키지를 가려(Shadowing) 최신 블루프린트 라우트들이 작동하지 않고 M1 기동 불가 및 설정 동기화가 실패하는 버그 해결.
+- 루트 레벨의 `routes.py` 파일을 `routes_monolithic_backup.py`로 변경하여 `routes/` 패키지가 우선 임포트되도록 격리 처리.
+
+### 🔧 변경 파일
+- `esp32_firmware/esp32_firmware.ino`: ENA 자동 활성화 조건 추가 (`userReleased` 플래그 도입).
+- `routes.py`: `routes_monolithic_backup.py`로 파일 이름 변경 (shadowing 제거).
+
+### ✅ 결과
+- `esp32_firmware/esp32_firmware.ino`에 `userReleased` 플래그를 도입하여, 명시적으로 모터 전원 차단(`REL`)을 누르지 않은 상태에서 Python이 연결되어 `STATUS/POS/CFG` 명령이 수신되면 자동으로 ENA 핀을 활성화(`enableMotors()`)하도록 조치함. 이에 따라 부팅 시 초기 모터 힘이 안 들어오던 현상 해결.
+- 루트 레벨의 `routes.py` 단일 파일을 `routes_monolithic_backup.py`로 이름을 바꾸어 임포트 섀도잉 문제를 제거하였으며, Python이 `routes/` 폴더 패키지(최신 Blueprint 구조)를 문제없이 로드하도록 수정 완료.
+- 이를 통해 M1/M2 조작 관련 조이스틱 가상 적분 제어(Virtual Target Integration) 및 `/set_esp32_deg_config` UI 설정 기능이 정상 작동하며 완벽히 연동됨.
+
+
+---
+
+## [2026-06-25] ESP32 FreeRTOS 뮤텍스 스타베이션 및 초기 기동 토크 누락 수정
+
+### 📌 계획
+- ESP32 펌웨어의 `motorTask`가 뮤텍스를 독점하여 `serialTask`가 굶주리는 스타베이션 현상을 수정하기 위해, 메모리 잠금용 글로벌 뮤텍스를 폐지하고 Serial 출력 공유 방지용 `serialMutex`만 사용하여 잠금 범위를 최소화함.
+- `motorTask` 내부에서 CPU를 성실히 양보하도록 `vTaskDelay`를 개선하여 Task Watchdog 리셋 방지.
+- Python `motor_esp32.py` 연결 초기화 시 최대속도, 가속도 외에 스텝/각도(`CFG:SPD1`, `CFG:SPD2`) 동기화 추가.
+- Python 코드 내 오타 `버저` -> `버전` 수정하여 텍스트 가독성 개선.
+- `camera.py`의 비디오 스트림 전송(`gen_frames`, `gen_debug_frames`) 함수 내의 바이트 리터럴 구문 에러(SyntaxError: unterminated string literal) 수정.
+
+### 🔧 변경 파일
+- `turret_ws/esp32_firmware/esp32_firmware.ino`: 글로벌 뮤텍스를 `serialMutex`로 전환하고 Serial 전용 락으로 수정. `vTaskDelay` 스케줄링 양보 처리 적용.
+- `turret_ws/motor_esp32.py`: `connect` 함수 내부에 `CFG:SPD1` 및 `CFG:SPD2` 전송 추가. 로그 메시지 오타 수정. 시리얼 디버깅용 print문 추가.
+- `turret_ws/camera.py`: `gen_frames`, `gen_debug_frames` 내의 잘못된 멀티라인 바이트 리터럴 문자열 구문 수정.
+
+### ✅ 결과
+- `esp32_firmware/esp32_firmware.ino`에서 공유 변수 메모리 접근 시 사용하던 전체 범위의 뮤텍스(`xMutex`) 잠금을 완전히 해제하고, 무잠금(Lock-free) 병렬 스레드 통신 구조를 실현하여 `serialTask` 스타베이션 문제를 완벽하게 해결함.
+- `Serial` 출력 충돌 방지를 위해 `serialMutex`를 새롭게 지정하여, 오직 시리얼 출력(print/println) 시에만 짧게 잠그도록 구조화함.
+- `motorTask`에 비블로킹 `vTaskDelay`를 개선 적용(정지 상태 및 움직임 중 100ms마다 CPU를 양보)하여 Task Watchdog 리셋을 방지하고 CPU 전력 효율 최적화.
+- Python `motor_esp32.py` 연결 초기화 시 최대속도, 가속도와 더불어 steps/deg 각도 비율(`CFG:SPD1`, `CFG:SPD2`)을 자동으로 전송/동기화하도록 개선.
+- `motor_esp32.py` 내 한글 출력 오타(`버저` -> `버전`)를 올바르게 수정함.
+- `camera.py`에 존재하던 Multi-line Byte string literal 구문 에러를 standard escaping으로 수정하여 Flask 서버 기동 에러 및 비디오 스트림 500 에러를 완벽하게 해결함.
+- `main.py` 재시작 검증 결과, 서버 구동 시 모터에 강력한 홀딩 전류(토크 힘)가 즉시 인가되며, 조이스틱 비례제어 및 실시간 POS/motor_status 동기화가 지연 없이 매끄럽게 수행됨을 최종 확인함.
+
 

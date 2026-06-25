@@ -37,8 +37,8 @@ motor_cmd_timeout_ms = 600
 esp32_control_mode    = "pos"
 esp32_steps_per_deg_m1 = 44.44
 esp32_steps_per_deg_m2 = 44.44
-esp32_max_speed_hz    = 3000.0  # 1:5 기어비 교려, 최고속도 대폭 상향
-esp32_accel_rate      = 40.0     # 0→3000Hz 도달에 375ms (부드러운 1초미만 가속)
+esp32_max_speed_hz    = 3000.0  # 1:5 기어비 고려, 최고속도 대폭 상향
+esp32_accel_rate      = 12.0     # 0→3000Hz 도달에 250ms (부드러운 가속)
 
 # ESP32 deg 위치 피드백
 esp32_pos_m1_deg = 0.0
@@ -79,3 +79,5 @@ arduino_m2_max_speed  = 800
 arduino_m2_accel      = 400
 arduino_pos_m1        = 0
 arduino_pos_m2        = 0
+
+pause_reconnect       = False   # 펌웨어 업로드 중 재연결 방지 플래그

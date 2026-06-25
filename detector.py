@@ -352,6 +352,7 @@ def reset_tracker():
 def _run():
     last_id    = None
     prev_frame = None
+    frame      = None
 
     while True:
         try:
@@ -414,10 +415,11 @@ def _run():
             time.sleep(0.1)
 
         # ── 자동 모드: 조준점 갱신 ───────────────────────
-        if state.control_mode == "auto" and state.ball:
+        if state.control_mode == "auto" and state.ball and frame is not None:
             tx = state.ball.get("predicted_cx", state.ball["cx"])
             ty = state.ball.get("predicted_cy", state.ball["cy"])
-            frame_h, frame_w = frame.shape[:2]
+            frame_h = frame.shape[0]
+            frame_w = frame.shape[1]
             center_x = frame_w / 2
             center_y = frame_h / 2
             # P-Controller: 현재 모터 좌표(state.point)에서 프레임 중앙 기준 오차만큼 부드럽게 이동

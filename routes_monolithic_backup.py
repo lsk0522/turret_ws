@@ -1,3 +1,5 @@
+# pyright: ignore-all
+
 from flask import (
     Response,
     request,
@@ -607,13 +609,13 @@ def setup_routes(app):
     # ESP32 mm 위치 제어 — 파라미터 조회
     # ─────────────────────────────────────────
 
-    @app.route('/esp32_mm_settings')
-    def esp32_mm_settings():
-        """ESP32 mm 위치 제어 파라미터 전체 조회"""
+    @app.route('/esp32_deg_settings')
+    def esp32_deg_settings():
+        """ESP32 deg 위치 제어 파라미터 전체 조회"""
         return jsonify(
             control_mode=state.esp32_control_mode,
-            steps_per_mm_m1=state.esp32_steps_per_mm_m1,
-            steps_per_mm_m2=state.esp32_steps_per_mm_m2,
+            steps_per_deg_m1=state.esp32_steps_per_deg_m1,
+            steps_per_deg_m2=state.esp32_steps_per_deg_m2,
             max_speed_hz=state.esp32_max_speed_hz,
             accel_rate=state.esp32_accel_rate,
             steps_per_px=state.motor_steps_per_px,   # 카메라 추적 탭용
@@ -628,28 +630,28 @@ def setup_routes(app):
         )
 
     # ─────────────────────────────────────────
-    # ESP32 mm 위치 제어 — 파라미터 변경
+    # ESP32 deg 위치 제어 — 파라미터 변경
     # ─────────────────────────────────────────
 
-    @app.route('/set_esp32_mm_config')
-    def set_esp32_mm_config():
+    @app.route('/set_esp32_deg_config')
+    def set_esp32_deg_config():
         """
-        ESP32 mm 위치 제어 파라미터 변경 및 ESP32 동기화
-        ?key=steps_per_mm_m1&value=78.0
+        ESP32 deg 위치 제어 파라미터 변경 및 ESP32 동기화
+        ?key=steps_per_deg_m1&value=44.44
         """
         import motor_esp32 as esp
         key   = request.args.get('key', '')
         value = request.args.get('value', '')
 
-        if key == 'steps_per_mm_m1':
+        if key == 'steps_per_deg_m1':
             v = float(value)
-            state.esp32_steps_per_mm_m1 = v
-            # ESP32 CFG:SPM1:<val×10> 형태로 전송
-            esp.send_config('SPM1', int(v * 10))
-        elif key == 'steps_per_mm_m2':
+            state.esp32_steps_per_deg_m1 = v
+            # ESP32 CFG:SPD1:<val×10> 형태로 전송
+            esp.send_config('SPD1', int(v * 10))
+        elif key == 'steps_per_deg_m2':
             v = float(value)
-            state.esp32_steps_per_mm_m2 = v
-            esp.send_config('SPM2', int(v * 10))
+            state.esp32_steps_per_deg_m2 = v
+            esp.send_config('SPD2', int(v * 10))
         elif key == 'max_speed_hz':
             v = float(value)
             state.esp32_max_speed_hz = v

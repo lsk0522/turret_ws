@@ -9,7 +9,8 @@
                 "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.10/libraries/**",
                 "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/tools/esp-x32/2601/xtensa-esp-elf/include",
                 "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/tools/esp-x32/2601/lib/gcc/xtensa-esp-elf/14.2.0/include",
-                "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/tools/esp-x32/2601/picolibc/xtensa-esp-elf/include"
+                "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/tools/esp-x32/2601/picolibc/xtensa-esp-elf/include",
+                "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/tools/esp32-libs/3.3.10/include"
             ],
             "forcedInclude": [
                 "C:/Users/LSK0522/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.10/cores/esp32/Arduino.h"

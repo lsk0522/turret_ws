@@ -33,6 +33,9 @@
  * ===================================================================================== */
 
 #include <Arduino.h>
+#include <stdint.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #define FIRMWARE_VERSION "2.0.0"
 
@@ -63,6 +66,7 @@ const int CENTER_Y = 240;
 #define WATCHDOG_MS 3000
 unsigned long lastCmdMs  = 0;
 bool motorsEnabled       = true;
+bool userReleased        = false; // 사용자가 수동으로 모터를 풀었는지 여부
 
 // 위치/속도
 long targetPosM1 = 0, currentPosM1 = 0;
@@ -101,49 +105,94 @@ void releaseMotors() {
   motorsEnabled = false;
 }
 
+SemaphoreHandle_t serialMutex;
+TaskHandle_t serialTaskHandle = NULL;
+TaskHandle_t motorTaskHandle = NULL;
+
+void serialTask(void *pvParameters) {
+  String buf = "";
+  while (1) {
+    while (Serial.available() > 0) {
+      char c = (char)Serial.read();
+      if (c == '\n') {
+        buf.trim();
+        if (buf.length() > 0) {
+          xSemaphoreTake(serialMutex, portMAX_DELAY);
+          parseCommand(buf);
+          xSemaphoreGive(serialMutex);
+        }
+        buf = "";
+      } else {
+        if (buf.length() < 128) buf += c;
+        else buf = "";
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+}
+
+void motorTask(void *pvParameters) {
+  unsigned long lastWdtMs = millis();
+  while (1) {
+    unsigned long curUs = micros();
+    unsigned long curMs = millis();
+
+    // Watchdog check (reads motorsEnabled, lastCmdMs - lock-free is safe)
+    if (motorsEnabled && (curMs - lastCmdMs >= WATCHDOG_MS)) {
+      releaseMotors();
+      xSemaphoreTake(serialMutex, portMAX_DELAY);
+      Serial.println("REL:AUTO");
+      xSemaphoreGive(serialMutex);
+    }
+
+    // stepMotors operates lock-free
+    stepMotors(curUs, curMs);
+
+    // sendPosStatus uses serialMutex internally
+    if (curMs - lastStatusMs >= 30) {
+      lastStatusMs = curMs;
+      sendPosStatus();
+    }
+
+    // Yield CPU to prevent Task Watchdog resets on Core 1
+    long remM1 = targetPosM1 - currentPosM1;
+    long remM2 = targetPosM2 - currentPosM2;
+    if (remM1 == 0 && remM2 == 0) {
+      vTaskDelay(pdMS_TO_TICKS(1)); // Yield for 1ms if idle
+    } else if (curMs - lastWdtMs >= 100) {
+      lastWdtMs = curMs;
+      vTaskDelay(pdMS_TO_TICKS(1)); // Yield for 1ms every 100ms during movement
+    } else {
+      vTaskDelay(0);
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
+  serialMutex = xSemaphoreCreateMutex();
+
   pinMode(M1_ENA, OUTPUT); pinMode(M1_DIR, OUTPUT); pinMode(M1_PUL, OUTPUT);
   pinMode(M2_ENA, OUTPUT); pinMode(M2_DIR, OUTPUT); pinMode(M2_PUL, OUTPUT);
+  
   digitalWrite(M1_ENA, LOW);
   digitalWrite(M2_ENA, LOW);
   digitalWrite(M1_PUL, HIGH);
   digitalWrite(M2_PUL, HIGH);
+
   lastStatusMs = millis();
   lastCmdMs    = millis();
+  
   Serial.print("VER:"); Serial.println(FIRMWARE_VERSION);
   Serial.println("OK BOOT AI Vision Tracker ESP32 Ready");
+
+  // Create FreeRTOS Tasks
+  xTaskCreatePinnedToCore(serialTask, "serialTask", 4096, NULL, 1, &serialTaskHandle, 0);
+  xTaskCreatePinnedToCore(motorTask, "motorTask", 4096, NULL, 1, &motorTaskHandle, 1);
 }
 
 void loop() {
-  unsigned long curUs = micros();
-  unsigned long curMs = millis();
-
-  // Watchdog
-  if (motorsEnabled && (curMs - lastCmdMs >= WATCHDOG_MS)) {
-    releaseMotors();
-    Serial.println("REL:AUTO");
-  }
-
-  stepMotors(curUs, curMs);
-
-  if (curMs - lastStatusMs >= 30) {
-    lastStatusMs = curMs;
-    sendPosStatus();
-  }
-
-  while (Serial.available() > 0) {
-    char c = (char)Serial.read();
-    if (c == '\n') {
-      _serialBuf.trim();
-      if (_serialBuf.length() > 0)
-        parseCommand(_serialBuf);
-      _serialBuf = "";
-    } else {
-      if (_serialBuf.length() < 128) _serialBuf += c;
-      else _serialBuf = "";
-    }
-  }
+  vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 void stepMotors(unsigned long curUs, unsigned long curMs) {
@@ -156,11 +205,18 @@ void stepMotors(unsigned long curUs, unsigned long curMs) {
     digitalWrite(M1_DIR, dir1 ? HIGH : LOW);
     float wallSpd1 = min(MAX_SPEED_LIMIT, (float)abs(remM1) * 20.0f);
     if (wallSpd1 < 20.0f) wallSpd1 = 20.0f;
+    
     if (curMs - lastAccelTimeM1 >= 1) {
       lastAccelTimeM1 = curMs;
-      if (currentSpeedM1 < wallSpd1) currentSpeedM1 += ACCELERATION_RATE;
+      if (currentSpeedM1 < wallSpd1) {
+        currentSpeedM1 += ACCELERATION_RATE;
+        if (currentSpeedM1 > wallSpd1) currentSpeedM1 = wallSpd1;
+      } else if (currentSpeedM1 > wallSpd1) {
+        currentSpeedM1 -= ACCELERATION_RATE;
+        if (currentSpeedM1 < wallSpd1) currentSpeedM1 = wallSpd1;
+      }
     }
-    if (currentSpeedM1 > wallSpd1) currentSpeedM1 = wallSpd1;
+    
     if (currentSpeedM1 > 5.0f) {
       unsigned long interval = (unsigned long)(1000000.0f / currentSpeedM1);
       if (curUs - lastPulseTimeM1 >= interval) {
@@ -178,11 +234,18 @@ void stepMotors(unsigned long curUs, unsigned long curMs) {
     digitalWrite(M2_DIR, dir2 ? HIGH : LOW);
     float wallSpd2 = min(MAX_SPEED_LIMIT, (float)abs(remM2) * 20.0f);
     if (wallSpd2 < 20.0f) wallSpd2 = 20.0f;
+    
     if (curMs - lastAccelTimeM2 >= 1) {
       lastAccelTimeM2 = curMs;
-      if (currentSpeedM2 < wallSpd2) currentSpeedM2 += ACCELERATION_RATE;
+      if (currentSpeedM2 < wallSpd2) {
+        currentSpeedM2 += ACCELERATION_RATE;
+        if (currentSpeedM2 > wallSpd2) currentSpeedM2 = wallSpd2;
+      } else if (currentSpeedM2 > wallSpd2) {
+        currentSpeedM2 -= ACCELERATION_RATE;
+        if (currentSpeedM2 < wallSpd2) currentSpeedM2 = wallSpd2;
+      }
     }
-    if (currentSpeedM2 > wallSpd2) currentSpeedM2 = wallSpd2;
+    
     if (currentSpeedM2 > 5.0f) {
       unsigned long interval = (unsigned long)(1000000.0f / currentSpeedM2);
       if (curUs - lastPulseTimeM2 >= interval) {
@@ -197,10 +260,13 @@ void stepMotors(unsigned long curUs, unsigned long curMs) {
 void sendPosStatus() {
   long pm1 = (STEPS_PER_DEG_M1 > 0.001f) ? (long)((currentPosM1 / STEPS_PER_DEG_M1) * 100.0f) : 0;
   long pm2 = (STEPS_PER_DEG_M2 > 0.001f) ? (long)((currentPosM2 / STEPS_PER_DEG_M2) * 100.0f) : 0;
+  
+  xSemaphoreTake(serialMutex, portMAX_DELAY);
   Serial.print("POS:"); Serial.print(pm1); Serial.print(":");
   Serial.print(pm2);   Serial.print(":");
   Serial.print((int)currentSpeedM1); Serial.print(":");
   Serial.println((int)currentSpeedM2);
+  xSemaphoreGive(serialMutex);
 }
 
 void setTargetAngles(float angleM1, float angleM2) {
@@ -230,6 +296,7 @@ void parseCommand(String cmd) {
 
   // REL — 즉시 해제 (Watchdog 타이머도 리셋하여 자동 재활성화 방지)
   if (upper == "REL") {
+    userReleased = true; // 사용자가 명시적으로 모터를 풂
     releaseMotors();
     lastCmdMs = millis(); 
     Serial.println("OK REL");
@@ -239,6 +306,7 @@ void parseCommand(String cmd) {
   // T:x:y
   if (upper.startsWith("T:")) {
     lastCmdMs = millis();
+    userReleased = false; // 움직임 명령 시 해제 상태 리셋
     if (!motorsEnabled) enableMotors();
     
     int c1 = cmd.indexOf(':', 2);
@@ -272,6 +340,7 @@ void parseCommand(String cmd) {
   // STATUS / POS
   if (upper == "STATUS" || upper == "POS") {
     lastCmdMs = millis();
+    if (!userReleased && !motorsEnabled) enableMotors(); // 수동 해제 상태가 아닐 때만 자동 활성화
     sendPosStatus();
     return;
   }
@@ -286,6 +355,7 @@ void parseCommand(String cmd) {
   // CFG
   if (upper.startsWith("CFG:")) {
     lastCmdMs = millis();
+    if (!userReleased && !motorsEnabled) enableMotors(); // 수동 해제 상태가 아닐 때만 자동 활성화
     int sep1 = cmd.indexOf(':', 4);
     if (sep1 < 0) return;
     String key = cmd.substring(4, sep1); key.toUpperCase();
@@ -307,6 +377,7 @@ void parseCommand(String cmd) {
   // MOVE J
   if (upper.startsWith("MOVE J ")) {
     lastCmdMs = millis();
+    userReleased = false; // 움직임 명령 시 해제 상태 리셋
     if (!motorsEnabled) enableMotors();
     
     String args  = cmd.substring(7); args.trim();

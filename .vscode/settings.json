@@ -1,9 +1,16 @@
 {
+    "C_Cpp.default.compilerPath": "",
     "files.associations": {
         "*.ino": "cpp"
     },
     "arduino.commandPath": "C:/Program Files/Arduino CLI/arduino-cli.exe",
     "arduino.useArduinoCli": true,
-    "arduino.logLevel": "warn",
-    "C_Cpp.errorSquiggles": "disabled"
+    "arduino.logLevel": "info",
+    "C_Cpp.errorSquiggles": "disabled",
+    "python.analysis.exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "**/.*",
+        "routes_monolithic_backup.py"
+    ]
 }
