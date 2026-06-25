@@ -35,8 +35,8 @@ motor_cmd_timeout_ms = 600
 
 # ── ESP32 mm 위치 제어 ────────────────────────────────────
 esp32_control_mode    = "pos"
-esp32_steps_per_deg_m1 = 78.0
-esp32_steps_per_deg_m2 = 78.0
+esp32_steps_per_deg_m1 = 44.44
+esp32_steps_per_deg_m2 = 44.44
 esp32_max_speed_hz    = 3000.0  # 1:5 기어비 교려, 최고속도 대폭 상향
 esp32_accel_rate      = 40.0     # 0→3000Hz 도달에 375ms (부드러운 1초미만 가속)
 

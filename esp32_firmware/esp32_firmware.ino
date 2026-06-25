@@ -45,8 +45,8 @@
 #define M2_PUL 23
 
 // 물리 파라미터
-float STEPS_PER_DEG_M1  = 78.0f;
-float STEPS_PER_DEG_M2  = 78.0f;
+float STEPS_PER_DEG_M1  = 44.44f;
+float STEPS_PER_DEG_M2  = 44.44f;
 float STEPS_PER_PIX    = 3.5f;
 float MAX_SPEED_LIMIT  = 3000.0f;
 float ACCELERATION_RATE= 8.0f;
@@ -243,8 +243,8 @@ void parseCommand(String cmd) {
     // 기본 수평 한계: 360도 회전 허용 (±180도)
     float limitM1 = 180.0f;
     
-    // 수직(M2)이 -45 ~ -25도 사이(아래로 숙인 상태)일 경우: 수평을 ±85도 (총 170도)로 제한
-    if (angleM2 >= -45.0f && angleM2 <= -25.0f) {
+    // 수직(M2)이 25도 이상 꺾였을 때(위든 아래든 상관없이 절대값 적용): 수평을 ±85도 (총 170도)로 제한
+    if (abs(angleM2) >= 25.0f) {
         limitM1 = 85.0f;
     }
     
