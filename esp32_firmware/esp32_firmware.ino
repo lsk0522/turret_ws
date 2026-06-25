@@ -228,19 +228,19 @@ void parseCommand(String cmd) {
   String upper = cmd;
   upper.toUpperCase();
 
-  // 모든 이동 명령 → Watchdog 갱신 + 모터 재활성화
-  lastCmdMs = millis();
-  if (!motorsEnabled) enableMotors();
-
-  // REL — 즉시 해제
+  // REL — 즉시 해제 (Watchdog 타이머도 리셋하여 자동 재활성화 방지)
   if (upper == "REL") {
     releaseMotors();
+    lastCmdMs = millis(); 
     Serial.println("OK REL");
     return;
   }
 
   // T:x:y
   if (upper.startsWith("T:")) {
+    lastCmdMs = millis();
+    if (!motorsEnabled) enableMotors();
+    
     int c1 = cmd.indexOf(':', 2);
     if (c1 < 0) return;
     int px = cmd.substring(2, c1).toInt();
@@ -303,6 +303,9 @@ void parseCommand(String cmd) {
 
   // MOVE J
   if (upper.startsWith("MOVE J ")) {
+    lastCmdMs = millis();
+    if (!motorsEnabled) enableMotors();
+    
     String args  = cmd.substring(7); args.trim();
     String argsU = args; argsU.toUpperCase();
     int spaceIdx = args.lastIndexOf(' ');
