@@ -85,6 +85,43 @@ def _sync_speed_to_esp32(speed: int):
 
 
 
+@bp.route('/joystick_dir')
+def joystick_dir():
+    # 미세조정을 위해 float로 받음 (script.js에서 -1.0 ~ 1.0 전송)
+    x = float(request.args.get('x', 0))
+    y = float(request.args.get('y', 0))
+    import motor_esp32 as esp
+    
+    if state.esp32_control_mode != "pos":
+        esp.set_mode("pos")
+        
+    if x == 0 and y == 0:
+        esp.stop_motors()
+    else:
+        # 가상 타겟 적분(Virtual Target Integration) 방식 적용!
+        # 매 30ms마다 누적된 가상 타겟을 전진시킵니다.
+        if not getattr(state, 'motor_moving', False):
+            state.motor_moving = True
+            # 중요: 조이스틱을 다시 움직일 때 가상 타겟을 '실제 모터 위치(esp32_pos)'로 리셋하지 않습니다!
+            # 실제 위치는 통신 딜레이(최대 100ms)로 인해 과거의 위치일 수 있으며, 이로 인해 시작할 때 
+            # 모터가 뒤로 튕기거나 멈칫하는 '딜레이'가 발생합니다.
+            # 모터는 어차피 이전 가상 타겟 위치에 완벽히 정지해 있으므로, 그대로 이어서 적분하면 딜레이 0초로 즉각 반응합니다.
+
+        # 속도 설정: 1.0 = 최대 속도 (mm/s)
+        # 20.0 mm/s 는 약 1560Hz로 매우 적절한 최고 속도입니다.
+        MAX_SPEED_DEG_S = 20.0 
+        DT = 0.030 # script.js의 전송 주기 (30ms)로 즉각 반응!
+        
+        if x != 0:
+            state.last_queued_target_m1 += (x * MAX_SPEED_DEG_S * DT)
+            esp._send(f"MOVE J M1 {state.last_queued_target_m1:.3f}\n")
+            
+        if y != 0:
+            state.last_queued_target_m2 += (y * MAX_SPEED_DEG_S * DT)
+            esp._send(f"MOVE J M2 {state.last_queued_target_m2:.3f}\n")
+        
+    return "OK"
+
 @bp.route('/set_input_mode')
 def set_input_mode():
     mode = request.args.get('mode', 'joystick')
@@ -96,7 +133,14 @@ def set_input_mode():
             state.control_mode = 'manual'
             import motor_esp32 as esp
             if state.motor_connected:
-                esp.set_mode("track")
+                if mode == 'joystick':
+                    esp.set_mode("pos")
+                    # 트래킹 모드나 다른 동작 후 조이스틱 모드로 돌아올 때,
+                    # 가상 타겟이 엉뚱한 곳에 남아있어 모터가 순간이동(스냅)하는 것을 방지합니다.
+                    state.last_queued_target_m1 = state.esp32_pos_m1_deg
+                    state.last_queued_target_m2 = state.esp32_pos_m2_deg
+                else:
+                    esp.set_mode("track")
     return "OK"
 
 

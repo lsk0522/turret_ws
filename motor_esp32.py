@@ -248,12 +248,12 @@ def _get_next_seq():
         return _seq_counter
 
 
-def move_mm(target: str, mm: float):
+def move_deg(target: str, mm: float):
     """절대 위치 이동 (큐 추가)."""
     return enqueue_move(target, mm, is_absolute=True)
 
 
-def move_relative_mm(target: str, delta: float):
+def move_relative_deg(target: str, delta: float):
     """상대 위치 이동 (큐 추가)."""
     return enqueue_move(target, delta, is_absolute=False)
 

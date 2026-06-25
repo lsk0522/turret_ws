@@ -17,8 +17,8 @@ def motor_status():
     else:
         center_x, center_y = 320, 240
     ex, ey = tx - center_x, ty - center_y
-    steps1 = int(state.esp32_pos_m1_mm * state.esp32_steps_per_mm_m1)
-    steps2 = int(state.esp32_pos_m2_mm * state.esp32_steps_per_mm_m2)
+    steps1 = int(state.esp32_pos_m1_deg * state.esp32_steps_per_deg_m1)
+    steps2 = int(state.esp32_pos_m2_deg * state.esp32_steps_per_deg_m2)
     moving = (abs(state.esp32_speed_m1) > 0.1 or abs(state.esp32_speed_m2) > 0.1)
 
     return jsonify(
@@ -51,12 +51,12 @@ def device_status():
 
 
 # ── ESP32 설정 조회/변경 ───────────────────────────────────
-@bp.route('/esp32_mm_settings')
-def esp32_mm_settings():
+@bp.route('/esp32_deg_settings')
+def esp32_deg_settings():
     return jsonify(
         control_mode=state.esp32_control_mode,
-        steps_per_mm_m1=state.esp32_steps_per_mm_m1,
-        steps_per_mm_m2=state.esp32_steps_per_mm_m2,
+        steps_per_deg_m1=state.esp32_steps_per_deg_m1,
+        steps_per_deg_m2=state.esp32_steps_per_deg_m2,
         max_speed_hz=state.esp32_max_speed_hz,
         accel_rate=state.esp32_accel_rate,
         dead_zone=state.motor_dead_zone,
@@ -69,14 +69,14 @@ def esp32_mm_settings():
     )
 
 
-@bp.route('/set_esp32_mm_config')
-def set_esp32_mm_config():
+@bp.route('/set_esp32_deg_config')
+def set_esp32_deg_config():
     import motor_esp32 as esp
     key   = request.args.get('key', '')
     value = request.args.get('value', '')
     _CFG = {
-        'steps_per_mm_m1': ('esp32_steps_per_mm_m1', float, 'SPM1', lambda v: int(v * 10)),
-        'steps_per_mm_m2': ('esp32_steps_per_mm_m2', float, 'SPM2', lambda v: int(v * 10)),
+        'steps_per_deg_m1': ('esp32_steps_per_deg_m1', float, 'SPM1', lambda v: int(v * 10)),
+        'steps_per_deg_m2': ('esp32_steps_per_deg_m2', float, 'SPM2', lambda v: int(v * 10)),
         'max_speed_hz':    ('esp32_max_speed_hz',    float, 'MSL',  int),
         'accel_rate':      ('esp32_accel_rate',      float, 'ACC',  lambda v: int(v * 10)),
         'steps_per_pix':   ('motor_steps_per_px',    float, 'SPX',  lambda v: int(v * 1000)),
@@ -140,12 +140,12 @@ def esp32_move():
     delta_str = request.args.get('delta')
     if delta_str is not None:
         try:
-            ok = esp.move_relative_mm(target, float(delta_str))
+            ok = esp.move_relative_deg(target, float(delta_str))
         except ValueError:
             return "INVALID DELTA", 400
     else:
         try:
-            ok = esp.move_mm(target, float(request.args.get('mm', 0)))
+            ok = esp.move_deg(target, float(request.args.get('mm', 0)))
         except ValueError:
             return "INVALID MM", 400
     return ("OK" if ok else ("NOT_CONNECTED", 503))
@@ -163,8 +163,8 @@ def esp32_pos_status():
     return jsonify(
         connected=state.motor_connected,
         control_mode=state.esp32_control_mode,
-        pos_m1_mm=round(state.esp32_pos_m1_mm, 2),
-        pos_m2_mm=round(state.esp32_pos_m2_mm, 2),
+        pos_m1_deg=round(state.esp32_pos_m1_deg, 2),
+        pos_m2_deg=round(state.esp32_pos_m2_deg, 2),
         speed_m1=round(state.esp32_speed_m1, 1),
         speed_m2=round(state.esp32_speed_m2, 1),
     )
@@ -300,3 +300,21 @@ def upload_firmware():
     state.pause_reconnect = False
     esp.connect(port)
     return jsonify(ok=success, log=log_output)
+
+
+@bp.route('/firmware_mode')
+def firmware_mode():
+    from flask import request, jsonify
+    import motor_esp32
+    import state
+    enable = int(request.args.get('enable', 0))
+    if enable == 1:
+        motor_esp32.release_motors()
+        motor_esp32.safe_disconnect()
+        state.motor_connected = False
+        print("[routes] Firmware upload mode: COM port released.")
+        return jsonify(ok=True, mode="firmware_upload")
+    else:
+        motor_esp32.start()
+        return jsonify(ok=True, mode="normal")
+

@@ -1852,7 +1852,7 @@ document.querySelectorAll(".klipper-param-apply").forEach(btn => {
 
         const value = input.value;
         try {
-            const res = await fetch(`/set_esp32_mm_config?key=${key}&value=${encodeURIComponent(value)}`);
+            const res = await fetch(`/set_esp32_deg_config?key=${key}&value=${encodeURIComponent(value)}`);
             if (res.ok) {
                 // 부모 카드에 초록 플래시 효과
                 const card = btn.closest(".klipper-param-card");
@@ -1886,7 +1886,7 @@ function bindKlipperInvert(btn, key) {
             ? "rgba(48,209,88,0.25)"
             : "rgba(255,255,255,0.08)";
         btn.style.color = next ? "#30d158" : "";
-        await fetch(`/set_esp32_mm_config?key=${key}&value=${next}`);
+        await fetch(`/set_esp32_deg_config?key=${key}&value=${next}`);
     });
 }
 
@@ -1929,8 +1929,8 @@ async function pollKlipperPos() {
         const res = await fetch("/esp32_pos_status");
         if (!res.ok) return;
         const d = await res.json();
-        klipperPosM1 = d.pos_m1_mm ?? 0;
-        klipperPosM2 = d.pos_m2_mm ?? 0;
+        klipperPosM1 = d.pos_m1_deg ?? 0;
+        klipperPosM2 = d.pos_m2_deg ?? 0;
         updateKlipperGauge(klipperPosM1, klipperPosM2, d.speed_m1 ?? 0, d.speed_m2 ?? 0);
     } catch(e) {}
 }
@@ -1977,7 +1977,7 @@ function showKlipperMsg(text, color = "#fff") {
 // ── 초기 파라미터 로드 ────────────────────────────────────────────────────────────
 async function loadEsp32MmSettings() {
     try {
-        const res = await fetch("/esp32_mm_settings");
+        const res = await fetch("/esp32_deg_settings");
         if (!res.ok) return;
         const d = await res.json();
 
@@ -1988,8 +1988,8 @@ async function loadEsp32MmSettings() {
         const accelEl  = document.getElementById("kp-accel");
         const pulsEl   = document.getElementById("kp-pulseus");
 
-        if (spm1El)   spm1El.value   = d.steps_per_mm_m1;
-        if (spm2El)   spm2El.value   = d.steps_per_mm_m2;
+        if (spm1El)   spm1El.value   = d.steps_per_deg_m1;
+        if (spm2El)   spm2El.value   = d.steps_per_deg_m2;
         if (maxSpdEl) maxSpdEl.value = d.max_speed_hz;
         if (accelEl)  accelEl.value  = d.accel_rate;
         if (pulsEl)   pulsEl.value   = d.pulse_us;
