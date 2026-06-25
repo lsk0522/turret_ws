@@ -203,6 +203,25 @@ void sendPosStatus() {
   Serial.println((int)currentSpeedM2);
 }
 
+void setTargetAngles(float angleM1, float angleM2) {
+    // 1. M2(수직) 제한 (-45도 ~ +45도)
+    if (angleM2 < -45.0f) angleM2 = -45.0f;
+    if (angleM2 > 45.0f)  angleM2 = 45.0f;
+
+    // 2. M1(수평) 제한
+    float limitM1 = 180.0f; // 기본 360도(±180도) 허용
+    // 수직이 밑으로 -45 ~ -25도일 때만 수평 170도(±85도)로 제한
+    if (angleM2 >= -45.0f && angleM2 <= -25.0f) {
+        limitM1 = 85.0f;
+    }
+
+    if (angleM1 < -limitM1) angleM1 = -limitM1;
+    if (angleM1 > limitM1)  angleM1 = limitM1;
+
+    targetPosM1 = (long)(angleM1 * STEPS_PER_DEG_M1);
+    targetPosM2 = (long)(angleM2 * STEPS_PER_DEG_M2);
+}
+
 void parseCommand(String cmd) {
   if (cmd.length() == 0) return;
 
@@ -227,31 +246,10 @@ void parseCommand(String cmd) {
     int px = cmd.substring(2, c1).toInt();
     int py = cmd.substring(c1 + 1).toInt();
     
-    // 1. 임시 목표 스텝 계산 (현재 위치 + 픽셀 오차 기반 상대 이동)
-    long tempTargetM1 = currentPosM1 + (long)((px - CENTER_X) * STEPS_PER_PIX);
-    long tempTargetM2 = currentPosM2 + (long)((py - CENTER_Y) * STEPS_PER_PIX);
-
-    // 2. M2(수직) 각도 계산 및 제한 (-45 ~ +45도)
-    float angleM2 = tempTargetM2 / STEPS_PER_DEG_M2;
-    if (angleM2 < -45.0f) angleM2 = -45.0f;
-    if (angleM2 > 45.0f)  angleM2 = 45.0f;
-    targetPosM2 = (long)(angleM2 * STEPS_PER_DEG_M2);
-
-    // 3. M1(수평) 각도 계산 및 조건부 제한
-    float angleM1 = tempTargetM1 / STEPS_PER_DEG_M1;
+    float angleM1 = (currentPosM1 + (long)((px - CENTER_X) * STEPS_PER_PIX)) / STEPS_PER_DEG_M1;
+    float angleM2 = (currentPosM2 + (long)((py - CENTER_Y) * STEPS_PER_PIX)) / STEPS_PER_DEG_M2;
     
-    // 기본 수평 한계: 360도 회전 허용 (±180도)
-    float limitM1 = 180.0f;
-    
-    // 수직(M2)이 25도 이상 꺾였을 때(위든 아래든 상관없이 절대값 적용): 수평을 ±85도 (총 170도)로 제한
-    if (abs(angleM2) >= 25.0f) {
-        limitM1 = 85.0f;
-    }
-    
-    if (angleM1 < -limitM1) angleM1 = -limitM1;
-    if (angleM1 > limitM1)  angleM1 = limitM1;
-    targetPosM1 = (long)(angleM1 * STEPS_PER_DEG_M1);
-    
+    setTargetAngles(angleM1, angleM2);
     return;
   }
 
@@ -308,18 +306,21 @@ void parseCommand(String cmd) {
     String args  = cmd.substring(7); args.trim();
     String argsU = args; argsU.toUpperCase();
     int spaceIdx = args.lastIndexOf(' ');
-    if (spaceIdx < 0) { Serial.println("ERROR: No mm value"); return; }
-    float mmVal = args.substring(spaceIdx + 1).toFloat();
+    if (spaceIdx < 0) { Serial.println("ERROR: No value"); return; }
+    float val = args.substring(spaceIdx + 1).toFloat();
+    
+    float currentM1 = currentPosM1 / STEPS_PER_DEG_M1;
+    float currentM2 = currentPosM2 / STEPS_PER_DEG_M2;
+
     if (argsU.startsWith("M1,M2") || argsU.startsWith("M1, M2")) {
-      targetPosM1 = (long)round(mmVal * STEPS_PER_DEG_M1);
-      targetPosM2 = (long)round(mmVal * STEPS_PER_DEG_M2);
-      Serial.print("OK MOVE J M1,M2 "); Serial.println(mmVal);
+      setTargetAngles(val, val);
+      Serial.print("OK MOVE J M1,M2 "); Serial.println(val);
     } else if (argsU.startsWith("M1")) {
-      targetPosM1 = (long)round(mmVal * STEPS_PER_DEG_M1);
-      Serial.print("OK MOVE J M1 "); Serial.println(mmVal);
+      setTargetAngles(val, currentM2);
+      Serial.print("OK MOVE J M1 "); Serial.println(val);
     } else if (argsU.startsWith("M2")) {
-      targetPosM2 = (long)round(mmVal * STEPS_PER_DEG_M2);
-      Serial.print("OK MOVE J M2 "); Serial.println(mmVal);
+      setTargetAngles(currentM1, val);
+      Serial.print("OK MOVE J M2 "); Serial.println(val);
     } else {
       Serial.println("ERROR: Target must be M1, M2, or M1,M2");
     }
