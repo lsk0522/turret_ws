@@ -186,6 +186,12 @@ def esp32_stop():
     esp.stop_motors()
     return "OK"
 
+@bp.route('/release_motors')
+def release_motors():
+    import motor_esp32 as esp
+    esp._send("REL\n")
+    return "OK"
+
 
 # ── Arduino 설정/명령 ──────────────────────────────────────
 @bp.route('/arduino_motor_settings')

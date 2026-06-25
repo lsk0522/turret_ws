@@ -2295,6 +2295,18 @@ const closeFirmware = document.getElementById("close-firmware");
 const btnStartUpload = document.getElementById("btn-start-upload");
 const firmwareProgress = document.getElementById("firmware-progress");
 
+const btnReleaseMotors = document.getElementById("btn-release-motors");
+if (btnReleaseMotors) {
+    btnReleaseMotors.addEventListener("click", async () => {
+        try {
+            await fetch("/release_motors");
+            showToast("⚠️ 모터 전원이 강제 차단되었습니다 (힘 풀림).", "info");
+        } catch(e) {
+            console.error(e);
+        }
+    });
+}
+
 if (btnUploadFirmware) {
     btnUploadFirmware.addEventListener("click", () => {
         closeSettingsModal();
