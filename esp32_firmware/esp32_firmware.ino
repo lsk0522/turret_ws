@@ -309,17 +309,21 @@ void parseCommand(String cmd) {
     if (spaceIdx < 0) { Serial.println("ERROR: No value"); return; }
     float val = args.substring(spaceIdx + 1).toFloat();
     
-    float currentM1 = currentPosM1 / STEPS_PER_DEG_M1;
-    float currentM2 = currentPosM2 / STEPS_PER_DEG_M2;
+    // 버그 수정: 현재 물리적 위치(currentPos)를 쓰면 안 됨! 
+    // 파이썬이 M1 명령 뒤에 M2 명령을 연달아 보낼 때(조이스틱 대각선 이동 등)
+    // 두 번째 명령이 첫 번째 명령의 타겟을 지워버리는 끔찍한 진동/멈춤 버그가 발생함.
+    // 따라서 기존에 진행 중이던 '목표 위치(targetPos)'를 유지해야 함.
+    float targetAngleM1 = targetPosM1 / STEPS_PER_DEG_M1;
+    float targetAngleM2 = targetPosM2 / STEPS_PER_DEG_M2;
 
     if (argsU.startsWith("M1,M2") || argsU.startsWith("M1, M2")) {
       setTargetAngles(val, val);
       Serial.print("OK MOVE J M1,M2 "); Serial.println(val);
     } else if (argsU.startsWith("M1")) {
-      setTargetAngles(val, currentM2);
+      setTargetAngles(val, targetAngleM2);
       Serial.print("OK MOVE J M1 "); Serial.println(val);
     } else if (argsU.startsWith("M2")) {
-      setTargetAngles(currentM1, val);
+      setTargetAngles(targetAngleM1, val);
       Serial.print("OK MOVE J M2 "); Serial.println(val);
     } else {
       Serial.println("ERROR: Target must be M1, M2, or M1,M2");
