@@ -114,10 +114,24 @@ def joystick_dir():
         
         if x != 0:
             state.last_queued_target_m1 += (x * MAX_SPEED_DEG_S * DT)
-            esp._send(f"MOVE J M1 {state.last_queued_target_m1:.3f}\n")
-            
         if y != 0:
             state.last_queued_target_m2 += (y * MAX_SPEED_DEG_S * DT)
+
+        # 수직(M2) 리밋 적용 (-45 ~ +45)
+        if state.last_queued_target_m2 < -45.0: state.last_queued_target_m2 = -45.0
+        if state.last_queued_target_m2 > 45.0:  state.last_queued_target_m2 = 45.0
+
+        # 수평(M1) 리밋 적용 (M2가 -45~-25일 땐 ±85, 그 외엔 ±180)
+        limit_m1 = 180.0
+        if -45.0 <= state.last_queued_target_m2 <= -25.0:
+            limit_m1 = 85.0
+            
+        if state.last_queued_target_m1 < -limit_m1: state.last_queued_target_m1 = -limit_m1
+        if state.last_queued_target_m1 > limit_m1:  state.last_queued_target_m1 = limit_m1
+
+        if x != 0:
+            esp._send(f"MOVE J M1 {state.last_queued_target_m1:.3f}\n")
+        if y != 0:
             esp._send(f"MOVE J M2 {state.last_queued_target_m2:.3f}\n")
         
     return "OK"
