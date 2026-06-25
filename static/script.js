@@ -478,22 +478,19 @@ function loop(timestamp){
         py = 240;
         
         if (inputMode === "joystick") {
-            // 조이스틱의 위치값을 직접 가상 타겟(tPx, tPy)의 오프셋으로 변환 (속도 제어)
-            if (Math.abs(joyVx) > 0.05 || Math.abs(joyVy) > 0.05) {
-                tPx = 320 + joyVx * maxSpeed * 6; // maxSpeed에 비례한 오프셋
-                tPy = 240 + joyVy * maxSpeed * 6;
-                
-                const now = Date.now();
-                if (now - lastSync > 30) {
-                    sendClick(tPx, tPy);
+            const now = Date.now();
+            if (now - lastSync > 30) {
+                if (Math.abs(joyVx) > 0.05 || Math.abs(joyVy) > 0.05) {
+                    // maxSpeed(1~20, 기본 5)를 곱해서 속도 비례 전송
+                    let speedMult = maxSpeed / 5.0; 
+                    fetch(`/joystick_dir?x=${(joyVx * speedMult).toFixed(3)}&y=${(joyVy * speedMult).toFixed(3)}`).catch(()=>{});
                     lastSync = now;
+                    tPx = 321; // 이동 중 플래그
+                } else if (tPx !== 320) {
+                    fetch(`/joystick_dir?x=0&y=0`).catch(()=>{});
+                    lastSync = now;
+                    tPx = 320; // 정지 플래그
                 }
-            } else if (tPx !== 320 || tPy !== 240) {
-                // 조이스틱을 놨을 때 즉각 중앙 타겟 전송하여 모터 즉시 정지
-                tPx = 320;
-                tPy = 240;
-                sendClick(320, 240);
-                lastSync = Date.now();
             }
         }
     } else {
