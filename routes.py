@@ -718,8 +718,8 @@ def setup_routes(app):
         return jsonify(
             connected=state.motor_connected,
             control_mode=state.esp32_control_mode,
-            pos_m1_mm=round(state.esp32_pos_m1_mm, 2),
-            pos_m2_mm=round(state.esp32_pos_m2_mm, 2),
+            pos_m1_deg=round(state.esp32_pos_m1_deg, 2),
+            pos_m2_deg=round(state.esp32_pos_m2_deg, 2),
             speed_m1=round(state.esp32_speed_m1, 1),
             speed_m2=round(state.esp32_speed_m2, 1),
         )

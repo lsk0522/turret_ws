@@ -138,14 +138,14 @@ def _parse_status(line: str):
             parts = line[4:].split(":")
             if len(parts) < 4:
                 return
-            state.esp32_pos_m1_mm = int(parts[0]) / 100.0
-            state.esp32_pos_m2_mm = int(parts[1]) / 100.0
+            state.esp32_pos_m1_deg = int(parts[0]) / 100.0
+            state.esp32_pos_m2_deg = int(parts[1]) / 100.0
             state.esp32_speed_m1  = float(parts[2])
             state.esp32_speed_m2  = float(parts[3])
 
             if _first_pos_sync:
-                state.last_queued_target_m1 = state.esp32_pos_m1_mm
-                state.last_queued_target_m2 = state.esp32_pos_m2_mm
+                state.last_queued_target_m1 = state.esp32_pos_m1_deg
+                state.last_queued_target_m2 = state.esp32_pos_m2_deg
                 _first_pos_sync = False
         except Exception:
             pass
@@ -264,8 +264,8 @@ def set_home():
         connected = _ser is not None and _ser.is_open
     if connected:
         _send("SETHOME\n")
-        state.esp32_pos_m1_mm = 0.0
-        state.esp32_pos_m2_mm = 0.0
+        state.esp32_pos_m1_deg = 0.0
+        state.esp32_pos_m2_deg = 0.0
         state.last_queued_target_m1 = 0.0
         state.last_queued_target_m2 = 0.0
         return True
@@ -288,8 +288,8 @@ def stop_motors():
             break
     # 자연스러운 감속을 위해 가상 타겟(last_queued_target)을 현재 위치로 강제 리셋하지 않습니다.
     # 이렇게 하면 펌웨어가 남은 오차(lag)만큼 스스로 부드럽게 이동하며 정지합니다.
-    # state.last_queued_target_m1 = state.esp32_pos_m1_mm
-    # state.last_queued_target_m2 = state.esp32_pos_m2_mm
+    # state.last_queued_target_m1 = state.esp32_pos_m1_deg
+    # state.last_queued_target_m2 = state.esp32_pos_m2_deg
 
 
 def start(port=None):
