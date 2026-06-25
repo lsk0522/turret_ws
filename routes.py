@@ -455,6 +455,22 @@ def setup_routes(app):
     # 모터 실시간 상태 조회
     # -------------------------
 
+    
+    @app.route('/firmware_mode')
+    def firmware_mode():
+        enable = int(request.args.get('enable', 0))
+        if enable == 1:
+            import motor_esp32
+            motor_esp32.release_motors()
+            motor_esp32.safe_disconnect()
+            state.motor_connected = False
+            print("[routes] Firmware upload mode: COM port released.")
+            return jsonify(ok=True, mode="firmware_upload")
+        else:
+            import motor_esp32
+            motor_esp32.start()
+            return jsonify(ok=True, mode="normal")
+
     @app.route('/motor_status')
     def motor_status():
         return jsonify(

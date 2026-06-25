@@ -484,7 +484,7 @@ function loop(timestamp){
                 tPy = 240 + joyVy * maxSpeed * 6;
                 
                 const now = Date.now();
-                if (now - lastSync > 60) {
+                if (now - lastSync > 30) {
                     sendClick(tPx, tPy);
                     lastSync = now;
                 }
