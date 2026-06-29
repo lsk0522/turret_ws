@@ -9,9 +9,14 @@ bp = Blueprint('detector', __name__)
 
 
 # ── 갤러리 ────────────────────────────────────────────────
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# routes is a subdirectory, so we go up one level
+PROJECT_DIR = os.path.dirname(BASE_DIR)
+PICTURE_DIR = os.path.join(PROJECT_DIR, "picture")
+
 @bp.route('/captures')
 def list_captures():
-    folder = "picture"
+    folder = PICTURE_DIR
     if not os.path.exists(folder):
         return jsonify([])
     try:
@@ -25,7 +30,7 @@ def list_captures():
 
 @bp.route('/picture/<path:filename>')
 def get_picture(filename):
-    return send_from_directory('picture', filename)
+    return send_from_directory(PICTURE_DIR, filename)
 
 
 # ── 추적 상태 ─────────────────────────────────────────────
