@@ -85,50 +85,47 @@ def _sync_speed_to_esp32(speed: int):
 
 
 
+import threading
+_joystick_lock = threading.Lock()
+
 @bp.route('/joystick_dir')
 def joystick_dir():
     # 미세조정을 위해 float로 받음 (script.js에서 -1.0 ~ 1.0 전송)
     x = float(request.args.get('x', 0))
     y = float(request.args.get('y', 0))
-    import motor_esp32 as esp
-    
-    if state.esp32_control_mode != "pos":
-        esp.set_mode("pos")
-        
-    if abs(x) < 0.001 and abs(y) < 0.001:
-        state.last_queued_target_m1 = state.esp32_pos_m1_deg
-        state.last_queued_target_m2 = state.esp32_pos_m2_deg
-        esp._send(f"MOVE J XY {state.last_queued_target_m1:.3f} {state.last_queued_target_m2:.3f}\n")
-        esp.stop_motors()
-    else:
-        # 가상 타겟 적분(Virtual Target Integration) 방식 적용!
-        # 매 30ms마다 누적된 가상 타겟을 전진시킵니다.
-        if not getattr(state, 'motor_moving', False):
-            state.motor_moving = True
-            state.last_queued_target_m1 = state.esp32_pos_m1_deg
-            state.last_queued_target_m2 = state.esp32_pos_m2_deg
+    seq = int(request.args.get('seq', 0))
 
-        # 조이스틱 기울기만큼 현재 위치 앞에 목표를 둡니다.
-        # 조금 당기면 작은 오차 → 저속, 많이 당기면 큰 오차 → 고속.
-        MAX_LEAD_DEG = 3.0
-        state.last_queued_target_m1 = state.esp32_pos_m1_deg + (x * MAX_LEAD_DEG)
-        state.last_queued_target_m2 = state.esp32_pos_m2_deg + (y * MAX_LEAD_DEG)
+    if seq > 0:
+        # Lock을 얻기 전에 "가장 최근에 서버에 도착한 요청 번호"를 전역 변수에 기록
+        current_latest = getattr(state, 'latest_received_seq', 0)
+        if seq > current_latest:
+            state.latest_received_seq = seq
 
-        # 수직(M2) 리밋 적용 (-45 ~ +45)
-        if state.last_queued_target_m2 < -45.0: state.last_queued_target_m2 = -45.0
-        if state.last_queued_target_m2 > 45.0:  state.last_queued_target_m2 = 45.0
-
-        # 수평(M1) 리밋 적용 (M2가 -45~-25일 땐 ±85, 그 외엔 ±180)
-        limit_m1 = 180.0
-        if -45.0 <= state.last_queued_target_m2 <= -25.0:
-            limit_m1 = 85.0
+    with _joystick_lock:
+        if seq > 0:
+            # 락을 얻고 나서 확인했을 때, 내 번호보다 더 높은 번호의 요청이 이미 도착해있다면 나는 과거 명령이므로 무시
+            if seq < getattr(state, 'latest_received_seq', 0):
+                return "STALE"
             
-        if state.last_queued_target_m1 < -limit_m1: state.last_queued_target_m1 = -limit_m1
-        if state.last_queued_target_m1 > limit_m1:  state.last_queued_target_m1 = limit_m1
+            last_seq = getattr(state, 'joystick_cmd_seq', 0)
+            if seq <= last_seq:
+                return "STALE"
+            state.joystick_cmd_seq = seq
 
-        if x != 0 or y != 0:
-            esp._send(f"MOVE J XY {state.last_queued_target_m1:.3f} {state.last_queued_target_m2:.3f}\n")
+        import motor_esp32 as esp
         
+        if state.esp32_control_mode != "pos":
+            esp.set_mode("pos")
+            
+        if abs(x) < 0.001 and abs(y) < 0.001:
+            # 조이스틱에서 손을 뗌 → 즉시 정지
+            esp.stop_motors()
+        else:
+            # 순수 조그(Velocity) 제어 방식: 목표 위치를 보내는 대신 "속도 방향" 자체를 전송합니다.
+            # ESP32 펌웨어에 새로 추가된 JOG 모드와 Watchdog(150ms)을 활용합니다.
+            state.motor_moving = True
+            esp._send(f"JOG {x:.3f} {y:.3f}\n")
+            
     return "OK"
 
 @bp.route('/set_input_mode')

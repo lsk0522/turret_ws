@@ -76,7 +76,9 @@ let joyVy = 0;
 let joySendX = 0;
 let joySendY = 0;
 let joystickTouchId = null;
-let _joySent = false;  // ← 이 줄 추가
+let _joySent = false;
+let joySeq = 0;
+let joyAbortController = null;
 
 /* 학습 모드 상태 — drawCrosshair에서 참조하므로 loop() 전에 선언 */
 let learningMode    = false;
@@ -378,6 +380,14 @@ function resetStick(){
         tPx = 320;
         tPy = 240;
         sendClick(320, 240);
+        // 조이스틱 릴리즈 즉시 stop 명령 전송 (이전 요청 취소)
+        if (_joySent) {
+            joySeq++;
+            if (joyAbortController) joyAbortController.abort();
+            joyAbortController = new AbortController();
+            fetch(`/joystick_dir?x=0&y=0&seq=${joySeq}`, { signal: joyAbortController.signal }).catch(()=>{});
+            _joySent = false;
+        }
     }
     lastSync = Date.now();
 }
@@ -399,7 +409,10 @@ base.addEventListener("touchmove", (e)=>{
     }
 },{passive:false});
 
-base.addEventListener("touchend", () => {
+base.addEventListener("touchend", (e) => {
+    resetStick();
+});
+base.addEventListener("touchcancel", (e) => {
     resetStick();
 });
 
@@ -416,10 +429,12 @@ base.addEventListener("mousedown", (e)=>{
         resetStick();
         window.removeEventListener("mousemove", move);
         window.removeEventListener("mouseup", up);
+        document.removeEventListener("mouseleave", up);
     }
 
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
+    document.addEventListener("mouseleave", up);
 });
 
 /* ==========================================
@@ -498,26 +513,34 @@ function loop(timestamp){
                     joySendX = 0;
                     joySendY = 0;
                     if (_joySent) {
-                        fetch(`/joystick_dir?x=0&y=0`).catch(()=>{});
+                        joySeq++;
+                        if (joyAbortController) joyAbortController.abort();
+                        joyAbortController = new AbortController();
+                        fetch(`/joystick_dir?x=0&y=0&seq=${joySeq}`, { signal: joyAbortController.signal }).catch(()=>{});
                         lastSync = now;
                         _joySent = false;
                     }
                     requestAnimationFrame(loop);
                     return;
                 }
-                joySendX += (targetJoyX - joySendX) * 0.22;
-                joySendY += (targetJoyY - joySendY) * 0.22;
+                joySendX = targetJoyX;
+                joySendY = targetJoyY;
 
                 if (Math.abs(joySendX) > 0.01 || Math.abs(joySendY) > 0.01) {
-                    // maxSpeed(1~20, 기본 5)를 곱해서 속도 비례 전송
                     const speedMult = maxSpeed / 5.0;
-                    fetch(`/joystick_dir?x=${(joySendX * speedMult).toFixed(3)}&y=${(joySendY * speedMult).toFixed(3)}`).catch(()=>{});
+                    joySeq++;
+                    if (joyAbortController) joyAbortController.abort();
+                    joyAbortController = new AbortController();
+                    fetch(`/joystick_dir?x=${(joySendX * speedMult).toFixed(3)}&y=${(joySendY * speedMult).toFixed(3)}&seq=${joySeq}`, { signal: joyAbortController.signal }).catch(()=>{});
                     lastSync = now;
                     _joySent = true;
                 } else if (_joySent) {
                     joySendX = 0;
                     joySendY = 0;
-                    fetch(`/joystick_dir?x=0&y=0`).catch(()=>{});
+                    joySeq++;
+                    if (joyAbortController) joyAbortController.abort();
+                    joyAbortController = new AbortController();
+                    fetch(`/joystick_dir?x=0&y=0&seq=${joySeq}`, { signal: joyAbortController.signal }).catch(()=>{});
                     lastSync = now;
                     _joySent = false;
                 }

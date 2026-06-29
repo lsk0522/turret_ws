@@ -296,12 +296,14 @@ def set_home():
 
 
 def stop_motors():
-    """모든 모터 정지 및 큐 초기화 (S명령 없이 자연 감속)"""
+    """조이스틱 릴리즈 시 즉시 정지.
+    펌웨어 v2.0.7부터 S 명령이 targetPos=currentPos, speed=0 즉시 적용.
+    """
     state.motor_stopped = True
     state.motor_moving = False
-    # S명령은 펌웨어에서 즉시 속도를 0으로 만들어버려 기구적 충격(티디디딕)을 유발하므로 주석 처리.
-    # joystick_dir()에서 유지하던 +5.0mm 타겟을 그대로 두면, 펌웨어가 5.0mm를 이동하면서 스스로 부드럽게 감속하여 정지함.
-    # _send("S\n")
+    _send("JOG 0.0 0.0\n")  # JOG 모드 확실히 종료
+    _send("S\n")            # 혹시 모를 관성 강제 정지
+    print("\n[esp32] 🛑 조이스틱 정지 명령(JOG 0 0 + S) 전송됨! (즉시 멈춰야 정상)\n")
     _abort_event.set()
     while not _move_queue.empty():
         try:
@@ -309,10 +311,8 @@ def stop_motors():
             _move_queue.task_done()
         except Exception:
             break
-    # 자연스러운 감속을 위해 가상 타겟(last_queued_target)을 현재 위치로 강제 리셋하지 않습니다.
-    # 이렇게 하면 펌웨어가 남은 오차(lag)만큼 스스로 부드럽게 이동하며 정지합니다.
-    # state.last_queued_target_m1 = state.esp32_pos_m1_deg
-    # state.last_queued_target_m2 = state.esp32_pos_m2_deg
+    state.last_queued_target_m1 = state.esp32_pos_m1_deg
+    state.last_queued_target_m2 = state.esp32_pos_m2_deg
 
 
 def start(port=None):

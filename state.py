@@ -19,6 +19,8 @@ learning_failed   = False
 motor_connected = False
 motor_port      = ""
 
+
+
 # ── 기기 타입 ──────────────────────────────────────────────
 device_type = "esp32"   # "esp32" | "arduino"
 
@@ -35,24 +37,22 @@ motor_cmd_timeout_ms = 600
 esp32_control_mode    = "pos"
 esp32_steps_per_deg_m1 = 44.44
 esp32_steps_per_deg_m2 = 44.44
-esp32_max_speed_hz    = 3000.0  # 1:5 기어비 고려, 최고속도 대폭 상향
-esp32_accel_rate      = 3.0      # 0→3000Hz 도달에 약 1초 (부드러운 가속)
-
+esp32_max_speed_hz    = 3000.0
+esp32_accel_rate      = 15.0     # 0→3000Hz 도달에 200ms (매우 빠른 반응성)
 # ESP32 deg 위치 피드백
 esp32_pos_m1_deg = 0.0
 esp32_pos_m2_deg = 0.0
 esp32_speed_m1  = 0.0
 esp32_speed_m2  = 0.0
 
+
 # ── 큐 추적 변수 ──────────────────────────────────────────
 last_queued_target_m1 = 0.0
 last_queued_target_m2 = 0.0
-joystick_cmd_seq = 0
-joystick_last_time = 0.0
 
 # ── 펌웨어 버전 관리 ──────────────────────────────────────
 # 백엔드가 기대하는 ESP32 펌웨어 버전 (펌웨어 수정 시 이 값도 함께 올리세요)
-EXPECTED_FIRMWARE_VERSION = "2.0.7"
+EXPECTED_FIRMWARE_VERSION = "2.0.6"
 
 # 실제로 연결된 ESP32가 보고한 버전
 firmware_version_actual   = ""      # VER: 수신 전까지 빈 문자열

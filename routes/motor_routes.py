@@ -299,9 +299,19 @@ def upload_firmware():
             state.pause_reconnect = False
             return jsonify(ok=False, log="연결된 ESP32 포트를 찾을 수 없습니다.")
 
+    import os
+    # motor_routes.py 위치 기준으로 프로젝트 루트 계산
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ino_path = os.path.join(base_dir, "esp32_firmware", "esp32_firmware.ino")
+    # 경로가 없으면 CWD 기준으로도 탐색
+    if not os.path.exists(ino_path):
+        ino_path = os.path.join(os.getcwd(), "esp32_firmware", "esp32_firmware.ino")
+    if not os.path.exists(ino_path):
+        state.pause_reconnect = False
+        return jsonify(ok=False, log=f"펌웨어 파일을 찾을 수 없습니다: {ino_path}")
+
     cmd = ["arduino-cli", "compile", "--upload", "-p", port,
-           "--fqbn", "esp32:esp32:d32",
-           "esp32_firmware/esp32_firmware.ino"]
+           "--fqbn", "esp32:esp32:d32", ino_path]
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
         success = (res.returncode == 0)

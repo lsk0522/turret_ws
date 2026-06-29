@@ -1,5 +1,5 @@
 /* =====================================================================================
- * AI Vision Tracker ESP32 Firmware  v2.0.6
+ * AI Vision Tracker ESP32 Firmware  v2.0.7
  * Python motor_esp32.py 완전 호환 버전
  *
  * [v2.0.1 변경사항]
@@ -38,6 +38,11 @@
  * [v2.0.6 변경사항]
  * TUNING 2: 과이동과 끊김 감소
  *   - 기본 가속도와 목표 속도 기울기를 추가 완화
+ *
+ * [v2.0.7 변경사항]
+ * FIX: S 명령을 점진 감속에서 즉시 정지로 변경
+ *   - S 수신 시 targetPos=currentPos, speed=0 즉시 설정
+ *   - 조이스틱에서 손을 떼면 모터가 그 자리에서 즉시 멈춤
  *
  * 핀 배선 (Lolin D32)
  * M1_ENA → GPIO 13    M1_DIR → GPIO 14    M1_PUL → GPIO 16
@@ -113,12 +118,14 @@ long targetPosM1 = 0, currentPosM1 = 0;
 long targetPosM2 = 0, currentPosM2 = 0;
 float currentSpeedM1 = 0.0f;
 float currentSpeedM2 = 0.0f;
-bool stoppingM1 = false;
-bool stoppingM2 = false;
 unsigned long lastPulseTimeM1 = 0, lastPulseTimeM2 = 0;
 unsigned long lastAccelTimeM1 = 0, lastAccelTimeM2 = 0;
 unsigned long lastStatusMs    = 0;
 
+bool isJogging = false;
+float jogVx = 0.0f;
+float jogVy = 0.0f;
+unsigned long lastJogMs = 0;
 // 함수 선언
 void parseCommand(String cmd);
 void sendPosStatus();
@@ -180,6 +187,21 @@ void motorTask(void *pvParameters) {
     long remM1 = targetPosM1 - currentPosM1;
     long remM2 = targetPosM2 - currentPosM2;
     bool isIdle = (remM1 == 0 && remM2 == 0);
+
+    if (isJogging) {
+      if (curMs - lastJogMs > 150) {
+        isJogging = false;
+        targetPosM1 = currentPosM1;
+        targetPosM2 = currentPosM2;
+        currentSpeedM1 = 0;
+        currentSpeedM2 = 0;
+      } else {
+        if (abs(jogVx) > 0.01) targetPosM1 = currentPosM1 + (jogVx > 0 ? 1000 : -1000);
+        else targetPosM1 = currentPosM1;
+        if (abs(jogVy) > 0.01) targetPosM2 = currentPosM2 + (jogVy > 0 ? 1000 : -1000);
+        else targetPosM2 = currentPosM2;
+      }
+    }
 
     // [FIX 3, 6] 사용자 해제가 아니고, 완전히 정지 상태일 때만 자동 해제
     if (motorsEnabled && !userReleased && isIdle && (curMs - lastCmdMs >= WATCHDOG_MS)) {
@@ -244,110 +266,66 @@ void stepMotors(unsigned long curUs, unsigned long curMs) {
   if (!motorsEnabled) return;
 
   // M1
-  if (stoppingM1) {
-    if (currentSpeedM1 > 5.0f) {
-      if (curMs - lastAccelTimeM1 >= 1) {
-        lastAccelTimeM1 = curMs;
-        currentSpeedM1 -= (ACCELERATION_RATE * 5.0f);
-        if (currentSpeedM1 < 5.0f) currentSpeedM1 = 0.0f;
+  long remM1 = targetPosM1 - currentPosM1;
+  if (remM1 != 0) {
+    bool dir1 = (remM1 > 0) ^ M1_INVERT;
+    digitalWrite(M1_DIR, dir1 ? HIGH : LOW);
+    float jogLimitM1 = isJogging ? (abs(jogVx) * MAX_SPEED_LIMIT) : MAX_SPEED_LIMIT;
+    if (jogLimitM1 < 8.0f) jogLimitM1 = 8.0f;
+    float wallSpd1 = min(jogLimitM1, (float)abs(remM1) * 8.0f);
+    if (wallSpd1 < 8.0f) wallSpd1 = 8.0f;
+
+    if (curMs - lastAccelTimeM1 >= 1) {
+      lastAccelTimeM1 = curMs;
+      if (currentSpeedM1 < wallSpd1) {
+        currentSpeedM1 += ACCELERATION_RATE;
+        if (currentSpeedM1 > wallSpd1) currentSpeedM1 = wallSpd1;
+      } else if (currentSpeedM1 > wallSpd1) {
+        currentSpeedM1 -= ACCELERATION_RATE;
+        if (currentSpeedM1 < wallSpd1) currentSpeedM1 = wallSpd1;
       }
-      if (currentSpeedM1 > 5.0f) {
-        unsigned long interval = (unsigned long)(1000000.0f / currentSpeedM1);
-        if (curUs - lastPulseTimeM1 >= interval) {
-          lastPulseTimeM1 = curUs;
-          digitalWrite(M1_PUL, LOW); delayMicroseconds(10); digitalWrite(M1_PUL, HIGH);
-          bool isPos = digitalRead(M1_DIR) == HIGH;
-          if (M1_INVERT) isPos = !isPos;
-          currentPosM1 += isPos ? 1 : -1;
-        }
-      }
-    } else {
-      currentSpeedM1 = 0.0f;
-      stoppingM1 = false;
-      targetPosM1 = currentPosM1;
     }
-  } else {
-    long remM1 = targetPosM1 - currentPosM1;
-    if (remM1 != 0) {
-      bool dir1 = (remM1 > 0) ^ M1_INVERT;
-      digitalWrite(M1_DIR, dir1 ? HIGH : LOW);
-      float wallSpd1 = min(MAX_SPEED_LIMIT, (float)abs(remM1) * 8.0f);
-      if (wallSpd1 < 8.0f) wallSpd1 = 8.0f;
 
-      if (curMs - lastAccelTimeM1 >= 1) {
-        lastAccelTimeM1 = curMs;
-        if (currentSpeedM1 < wallSpd1) {
-          currentSpeedM1 += ACCELERATION_RATE;
-          if (currentSpeedM1 > wallSpd1) currentSpeedM1 = wallSpd1;
-        } else if (currentSpeedM1 > wallSpd1) {
-          currentSpeedM1 -= ACCELERATION_RATE;
-          if (currentSpeedM1 < wallSpd1) currentSpeedM1 = wallSpd1;
-        }
+    if (currentSpeedM1 > 5.0f) {
+      unsigned long interval = (unsigned long)(1000000.0f / currentSpeedM1);
+      if (curUs - lastPulseTimeM1 >= interval) {
+        lastPulseTimeM1 = curUs;
+        digitalWrite(M1_PUL, LOW); delayMicroseconds(10); digitalWrite(M1_PUL, HIGH);
+        currentPosM1 += (remM1 > 0) ? 1 : -1;
       }
-
-      if (currentSpeedM1 > 5.0f) {
-        unsigned long interval = (unsigned long)(1000000.0f / currentSpeedM1);
-        if (curUs - lastPulseTimeM1 >= interval) {
-          lastPulseTimeM1 = curUs;
-          digitalWrite(M1_PUL, LOW); delayMicroseconds(10); digitalWrite(M1_PUL, HIGH);
-          currentPosM1 += (remM1 > 0) ? 1 : -1;
-        }
-      }
-    } else { currentSpeedM1 = 0.0f; }
-  }
+    }
+  } else { currentSpeedM1 = 0.0f; }
 
   // M2
-  if (stoppingM2) {
-    if (currentSpeedM2 > 5.0f) {
-      if (curMs - lastAccelTimeM2 >= 1) {
-        lastAccelTimeM2 = curMs;
-        currentSpeedM2 -= (ACCELERATION_RATE * 5.0f);
-        if (currentSpeedM2 < 5.0f) currentSpeedM2 = 0.0f;
+  long remM2 = targetPosM2 - currentPosM2;
+  if (remM2 != 0) {
+    bool dir2 = (remM2 > 0) ^ M2_INVERT;
+    digitalWrite(M2_DIR, dir2 ? HIGH : LOW);
+    float jogLimitM2 = isJogging ? (abs(jogVy) * MAX_SPEED_LIMIT) : MAX_SPEED_LIMIT;
+    if (jogLimitM2 < 8.0f) jogLimitM2 = 8.0f;
+    float wallSpd2 = min(jogLimitM2, (float)abs(remM2) * 8.0f);
+    if (wallSpd2 < 8.0f) wallSpd2 = 8.0f;
+
+    if (curMs - lastAccelTimeM2 >= 1) {
+      lastAccelTimeM2 = curMs;
+      if (currentSpeedM2 < wallSpd2) {
+        currentSpeedM2 += ACCELERATION_RATE;
+        if (currentSpeedM2 > wallSpd2) currentSpeedM2 = wallSpd2;
+      } else if (currentSpeedM2 > wallSpd2) {
+        currentSpeedM2 -= ACCELERATION_RATE;
+        if (currentSpeedM2 < wallSpd2) currentSpeedM2 = wallSpd2;
       }
-      if (currentSpeedM2 > 5.0f) {
-        unsigned long interval = (unsigned long)(1000000.0f / currentSpeedM2);
-        if (curUs - lastPulseTimeM2 >= interval) {
-          lastPulseTimeM2 = curUs;
-          digitalWrite(M2_PUL, LOW); delayMicroseconds(10); digitalWrite(M2_PUL, HIGH);
-          bool isPos = digitalRead(M2_DIR) == HIGH;
-          if (M2_INVERT) isPos = !isPos;
-          currentPosM2 += isPos ? 1 : -1;
-        }
-      }
-    } else {
-      currentSpeedM2 = 0.0f;
-      stoppingM2 = false;
-      targetPosM2 = currentPosM2;
     }
-  } else {
-    long remM2 = targetPosM2 - currentPosM2;
-    if (remM2 != 0) {
-      bool dir2 = (remM2 > 0) ^ M2_INVERT;
-      digitalWrite(M2_DIR, dir2 ? HIGH : LOW);
-      float wallSpd2 = min(MAX_SPEED_LIMIT, (float)abs(remM2) * 8.0f);
-      if (wallSpd2 < 8.0f) wallSpd2 = 8.0f;
 
-      if (curMs - lastAccelTimeM2 >= 1) {
-        lastAccelTimeM2 = curMs;
-        if (currentSpeedM2 < wallSpd2) {
-          currentSpeedM2 += ACCELERATION_RATE;
-          if (currentSpeedM2 > wallSpd2) currentSpeedM2 = wallSpd2;
-        } else if (currentSpeedM2 > wallSpd2) {
-          currentSpeedM2 -= ACCELERATION_RATE;
-          if (currentSpeedM2 < wallSpd2) currentSpeedM2 = wallSpd2;
-        }
+    if (currentSpeedM2 > 5.0f) {
+      unsigned long interval = (unsigned long)(1000000.0f / currentSpeedM2);
+      if (curUs - lastPulseTimeM2 >= interval) {
+        lastPulseTimeM2 = curUs;
+        digitalWrite(M2_PUL, LOW); delayMicroseconds(10); digitalWrite(M2_PUL, HIGH);
+        currentPosM2 += (remM2 > 0) ? 1 : -1;
       }
-
-      if (currentSpeedM2 > 5.0f) {
-        unsigned long interval = (unsigned long)(1000000.0f / currentSpeedM2);
-        if (curUs - lastPulseTimeM2 >= interval) {
-          lastPulseTimeM2 = curUs;
-          digitalWrite(M2_PUL, LOW); delayMicroseconds(10); digitalWrite(M2_PUL, HIGH);
-          currentPosM2 += (remM2 > 0) ? 1 : -1;
-        }
-      }
-    } else { currentSpeedM2 = 0.0f; }
-  }
+    }
+  } else { currentSpeedM2 = 0.0f; }
 }
 
 void sendPosStatus() {
@@ -384,6 +362,17 @@ void parseCommand(String cmd) {
   String upper = cmd;
   upper.toUpperCase();
 
+  // S — 즉시 정지 (targetPos=currentPos, speed=0) 및 HALT 기능
+  if (upper == "S") {
+    targetPosM1 = currentPosM1;
+    targetPosM2 = currentPosM2;
+    currentSpeedM1 = 0.0f;
+    currentSpeedM2 = 0.0f;
+    lastCmdMs = millis();
+    Serial.println("OK S");
+    return;
+  }
+
   // REL
   if (upper == "REL") {
     userReleased = true;
@@ -407,8 +396,6 @@ void parseCommand(String cmd) {
 
   // T:x:y
   if (upper.startsWith("T:")) {
-    stoppingM1 = false;
-    stoppingM2 = false;
     lastCmdMs = millis();
     userReleased = false;
     if (!motorsEnabled) enableMotors();
@@ -425,13 +412,7 @@ void parseCommand(String cmd) {
     return;
   }
 
-  // S
-  if (upper == "S") {
-    stoppingM1 = true;
-    stoppingM2 = true;
-    Serial.println("OK S");
-    return;
-  }
+
 
   // SETHOME
   if (upper == "SETHOME") {
@@ -478,10 +459,34 @@ void parseCommand(String cmd) {
     return;
   }
 
+  // JOG
+  if (upper.startsWith("JOG ")) {
+    lastCmdMs = millis();
+    lastJogMs = millis();
+    userReleased = false;
+    if (!motorsEnabled) enableMotors();
+    
+    String args = cmd.substring(4); args.trim();
+    int space = args.indexOf(' ');
+    if (space > 0) {
+      jogVx = args.substring(0, space).toFloat();
+      jogVy = args.substring(space + 1).toFloat();
+      if (abs(jogVx) < 0.01 && abs(jogVy) < 0.01) {
+        isJogging = false;
+        targetPosM1 = currentPosM1;
+        targetPosM2 = currentPosM2;
+        currentSpeedM1 = 0;
+        currentSpeedM2 = 0;
+      } else {
+        isJogging = true;
+      }
+    }
+    Serial.println("OK JOG");
+    return;
+  }
+
   // MOVE J
   if (upper.startsWith("MOVE J ")) {
-    stoppingM1 = false;
-    stoppingM2 = false;
     lastCmdMs = millis();
     userReleased = false;
     if (!motorsEnabled) enableMotors();
