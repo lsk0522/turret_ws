@@ -277,22 +277,11 @@ void stepMotors(unsigned long curUs, unsigned long curMs) {
 
     if (curMs - lastAccelTimeM1 >= 1) {
       lastAccelTimeM1 = curMs;
-      
-      float speedDiff = abs(wallSpd1 - currentSpeedM1);
-      float dynamicAccel = ACCELERATION_RATE;
-      if (speedDiff > 500.0f) {
-        dynamicAccel = ACCELERATION_RATE * 3.0f;
-      } else if (speedDiff > 200.0f) {
-        dynamicAccel = ACCELERATION_RATE * 2.0f;
-      } else if (currentSpeedM1 < 100.0f) {
-        dynamicAccel = ACCELERATION_RATE * 0.3f;
-      }
-
       if (currentSpeedM1 < wallSpd1) {
-        currentSpeedM1 += dynamicAccel;
+        currentSpeedM1 += ACCELERATION_RATE;
         if (currentSpeedM1 > wallSpd1) currentSpeedM1 = wallSpd1;
       } else if (currentSpeedM1 > wallSpd1) {
-        currentSpeedM1 -= dynamicAccel;
+        currentSpeedM1 -= ACCELERATION_RATE;
         if (currentSpeedM1 < wallSpd1) currentSpeedM1 = wallSpd1;
       }
     }
@@ -319,22 +308,11 @@ void stepMotors(unsigned long curUs, unsigned long curMs) {
 
     if (curMs - lastAccelTimeM2 >= 1) {
       lastAccelTimeM2 = curMs;
-
-      float speedDiff2 = abs(wallSpd2 - currentSpeedM2);
-      float dynamicAccel2 = ACCELERATION_RATE;
-      if (speedDiff2 > 500.0f) {
-        dynamicAccel2 = ACCELERATION_RATE * 3.0f;
-      } else if (speedDiff2 > 200.0f) {
-        dynamicAccel2 = ACCELERATION_RATE * 2.0f;
-      } else if (currentSpeedM2 < 100.0f) {
-        dynamicAccel2 = ACCELERATION_RATE * 0.3f;
-      }
-
       if (currentSpeedM2 < wallSpd2) {
-        currentSpeedM2 += dynamicAccel2;
+        currentSpeedM2 += ACCELERATION_RATE;
         if (currentSpeedM2 > wallSpd2) currentSpeedM2 = wallSpd2;
       } else if (currentSpeedM2 > wallSpd2) {
-        currentSpeedM2 -= dynamicAccel2;
+        currentSpeedM2 -= ACCELERATION_RATE;
         if (currentSpeedM2 < wallSpd2) currentSpeedM2 = wallSpd2;
       }
     }

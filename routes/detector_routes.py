@@ -29,8 +29,25 @@ def list_captures():
 
 
 @bp.route('/picture/<path:filename>')
-def get_picture(filename):
-    return send_from_directory(PICTURE_DIR, filename)
+def serve_picture(filename):
+    import os
+    from flask import send_from_directory
+    pic_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'picture')
+    return send_from_directory(pic_dir, filename)
+
+
+@bp.route('/delete/<path:filename>')
+def delete_picture(filename):
+    import os
+    pic_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'picture')
+    file_path = os.path.join(pic_dir, filename)
+    if os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+            return jsonify({"status": "ok"})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "error", "message": "File not found"}), 404
 
 
 # ── 추적 상태 ─────────────────────────────────────────────

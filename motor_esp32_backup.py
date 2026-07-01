@@ -233,20 +233,20 @@ def _run():
 
         now = time.time()
 
-        # track 모드: T:x:y 전송 (좌표 변경 시 즉시 + 30ms heartbeat)
+        # track 모드: T:x:y 전송 (좌표 변경 시 즉시 + 50ms heartbeat)
         if state.esp32_control_mode == "track":
             x, y = state.point[0], state.point[1]
-            if abs(x - last_x) >= 1 or abs(y - last_y) >= 1 or (now - last_t_time > 0.03):
+            if abs(x - last_x) >= 1 or abs(y - last_y) >= 1 or (now - last_t_time > 0.05):
                 _send(f"T:{x}:{y}\n")
                 last_x, last_y = x, y
                 last_t_time = now
 
-        # POS 주기 요청 (60ms)
-        if now - last_pos_req > 0.06:
+        # POS 주기 요청 (100ms)
+        if now - last_pos_req > 0.1:
             _send("POS\n")
             last_pos_req = now
 
-        time.sleep(0.002)
+        time.sleep(0.005)
 
 
 def send_config(key: str, value):

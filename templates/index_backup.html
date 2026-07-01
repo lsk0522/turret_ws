@@ -529,15 +529,15 @@
                     <div class="setting-item" style="margin-top:12px;">
                         <div class="segmented-control" id="esp32-mode-segment" style="margin-bottom:0;">
                             <div class="segment-slider"></div>
-                            <button class="segment-btn active" data-value="track">📷 자동 추적 설정</button>
-                            <button class="segment-btn" data-value="pos">📐 수동 좌표 제어</button>
+                            <button class="segment-btn active" data-value="track">📷 카메라 추적</button>
+                            <button class="segment-btn" data-value="pos">📐 각도 제어 (°)</button>
                         </div>
                     </div>
 
                     <!-- ════ 추적 파라미터 탭 ════ -->
                     <div id="esp32-track-tab">
                         <div class="setting-item">
-                            <label>추적 스텝 비율 (steps/px) — 1픽셀 오차당 이동할 스텝 수</label>
+                            <label>픽셀당 스텝 수 (steps/px) — 클수록 더 많이 이동</label>
                             <div class="klipper-param-input-row" style="margin-top:6px;">
                                 <input type="number" id="cfg-steps-per-px-num" class="klipper-param-input"
                                        value="3.5" min="0.1" max="20" step="0.1">
@@ -545,7 +545,7 @@
                             </div>
                         </div>
                         <div class="setting-item">
-                            <label>추적 최대 속도 (Hz) — 목표물 추적 시 모터 최고 속도</label>
+                            <label>최대 속도 (Hz) — 16T→80T 1:5 기어비, 기본 3000</label>
                             <div class="klipper-param-input-row" style="margin-top:6px;">
                                 <input type="number" id="cfg-max-speed-hz" class="klipper-param-input"
                                        value="3000" min="100" max="10000" step="100">
@@ -553,7 +553,7 @@
                             </div>
                         </div>
                         <div class="setting-item">
-                            <label>추적 가속도 (Hz/ms) — 목표물 추적 시 모터 가속도</label>
+                            <label>가속도 (Hz/ms) — 클수록 빠르게 최고속 도달, 기본 8.0</label>
                             <div class="klipper-param-input-row" style="margin-top:6px;">
                                 <input type="number" id="cfg-accel-rate" class="klipper-param-input"
                                        value="8.0" min="0.5" max="50" step="0.5">
@@ -561,21 +561,21 @@
                             </div>
                         </div>
                         <div class="setting-item">
-                            <label>추적 데드존 (px) — 이 픽셀 범위 내의 오차는 무시</label>
+                            <label>데드존 (px) — 이 범위 내 오차는 무시</label>
                             <div class="slider-wrap">
                                 <input type="range" id="cfg-dead-zone" min="1" max="50" step="1" value="8">
                                 <span id="cfg-dead-zone-val">8</span>
                             </div>
                         </div>
                         <div class="setting-item">
-                            <label>추적 명령 타임아웃 (ms)</label>
+                            <label>명령 타임아웃 (ms)</label>
                             <div class="slider-wrap">
                                 <input type="range" id="cfg-timeout" min="100" max="3000" step="50" value="600">
                                 <span id="cfg-timeout-val">600</span>
                             </div>
                         </div>
                         <div class="setting-item">
-                            <label>추적 축 방향 반전</label>
+                            <label>축 방향 반전</label>
                             <div class="cfg-toggle-row">
                                 <span class="cfg-toggle-label">M1 Pan 반전</span>
                                 <button id="cfg-m1-invert" class="cfg-toggle-btn" data-active="false">OFF</button>
@@ -593,16 +593,88 @@
                     </div>
 
 
-                    <!-- ════ 각도 제어 (°) 탭 ════ -->
+                    <!-- ════ 위치 제어 (mm) 탭 ════ -->
                     <div id="esp32-pos-tab" style="display:none;">
 
+                        <!-- 실시간 위치 게이지 -->
+                        <div class="klipper-pos-card">
+                            <div class="klipper-pos-axis">
+                                <div class="klipper-pos-label">M1 · Pan</div>
+                                <div class="klipper-pos-value" id="kp-m1-val">— °</div>
+                                <div class="klipper-pos-bar-wrap">
+                                    <div class="klipper-pos-bar">
+                                        <div class="klipper-pos-fill" id="kp-m1-fill" style="width:50%"></div>
+                                        <div class="klipper-pos-center"></div>
+                                    </div>
+                                </div>
+                                <div class="klipper-speed-label" id="kp-m1-spd">0 Hz</div>
+                            </div>
+                            <div class="klipper-pos-axis">
+                                <div class="klipper-pos-label">M2 · Tilt</div>
+                                <div class="klipper-pos-value" id="kp-m2-val">— °</div>
+                                <div class="klipper-pos-bar-wrap">
+                                    <div class="klipper-pos-bar">
+                                        <div class="klipper-pos-fill" id="kp-m2-fill" style="width:50%"></div>
+                                        <div class="klipper-pos-center"></div>
+                                    </div>
+                                </div>
+                                <div class="klipper-speed-label" id="kp-m2-spd">0 Hz</div>
+                            </div>
+                        </div>
+
+                        <!-- 모터 선택 탭 (M1 / M2 / Both) -->
+                        <div class="setting-item" style="margin-top:14px;">
+                            <label>이동 축 선택</label>
+                            <div class="segmented-control" id="deg-axis-segment">
+                                <div class="segment-slider" style="width:calc(33.33% - 2px)"></div>
+                                <button class="segment-btn active" data-value="M1">M1 Pan</button>
+                                <button class="segment-btn" data-value="M2">M2 Tilt</button>
+                                <button class="segment-btn" data-value="M1,M2">동시</button>
+                            </div>
+                        </div>
+
+                        <!-- 퀵 이동 버튼 (Klipper 스타일) -->
+                        <div class="setting-item">
+                            <label>빠른 이동 (현재 위치 기준 상대 이동)</label>
+                            <div class="klipper-jog-grid">
+                                <button class="klipper-jog-btn klipper-neg" data-delta="-100">−100</button>
+                                <button class="klipper-jog-btn klipper-neg" data-delta="-10">−10</button>
+                                <button class="klipper-jog-btn klipper-neg" data-delta="-1">−1</button>
+                                <button class="klipper-jog-btn klipper-neg" data-delta="-0.1">−0.1</button>
+                                <button class="klipper-jog-btn klipper-pos" data-delta="0.1">+0.1</button>
+                                <button class="klipper-jog-btn klipper-pos" data-delta="1">+1</button>
+                                <button class="klipper-jog-btn klipper-pos" data-delta="10">+10</button>
+                                <button class="klipper-jog-btn klipper-pos" data-delta="100">+100</button>
+                            </div>
+                            <div class="klipper-jog-unit">mm</div>
+                        </div>
+
+                        <!-- 절대 위치 이동 -->
+                        <div class="setting-item">
+                            <label>절대 위치 이동</label>
+                            <div class="klipper-abs-row">
+                                <input type="number" id="kp-abs-input" class="klipper-abs-input"
+                                       value="0" step="0.1" placeholder="mm">
+                                <button id="kp-abs-go" class="klipper-abs-btn">이동 ▶</button>
+                            </div>
+                        </div>
+
+                        <!-- 비상 정지 & 원점 설정 -->
+                        <div class="cfg-actions" style="margin-top:6px;">
+                            <button id="kp-sethome-btn" class="klipper-home-btn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                                SET HOME (원점 설정)
+                            </button>
+                            <button id="kp-estop-btn" class="cfg-estop-btn">⏹ E-STOP</button>
+                        </div>
+
                         <!-- Klipper 파라미터 카드 -->
-                        <div class="ms-section-label" style="margin-top:16px;">⚙️ 각도 제어 파라미터</div>
+                        <div class="ms-section-label" style="margin-top:20px;">⚙️ 모터 물리 파라미터</div>
                         <div class="klipper-param-grid">
 
                             <div class="klipper-param-card">
-                                <div class="klipper-param-title">M1 Steps/°</div>
-                                <div class="klipper-param-desc">1도 이동에 필요한 스텝 수</div>
+                                <div class="klipper-param-title">M1 Steps/mm</div>
+                                <div class="klipper-param-desc">DM542 마이크로스텝 × 기어비</div>
                                 <div class="klipper-param-input-row">
                                     <input type="number" id="kp-spm1" class="klipper-param-input"
                                            value="78.0" min="1" max="2000" step="0.1">
@@ -611,8 +683,8 @@
                             </div>
 
                             <div class="klipper-param-card">
-                                <div class="klipper-param-title">M2 Steps/°</div>
-                                <div class="klipper-param-desc">1도 이동에 필요한 스텝 수</div>
+                                <div class="klipper-param-title">M2 Steps/mm</div>
+                                <div class="klipper-param-desc">DM542 마이크로스텝 × 기어비</div>
                                 <div class="klipper-param-input-row">
                                     <input type="number" id="kp-spm2" class="klipper-param-input"
                                            value="78.0" min="1" max="2000" step="0.1">
@@ -621,7 +693,7 @@
                             </div>
 
                             <div class="klipper-param-card">
-                                <div class="klipper-param-title">제어 최대 속도</div>
+                                <div class="klipper-param-title">최대 속도</div>
                                 <div class="klipper-param-desc">펄스 주파수 한계 (Hz)</div>
                                 <div class="klipper-param-input-row">
                                     <input type="number" id="kp-maxspd" class="klipper-param-input"
@@ -631,7 +703,7 @@
                             </div>
 
                             <div class="klipper-param-card">
-                                <div class="klipper-param-title">제어 가속도</div>
+                                <div class="klipper-param-title">가속도</div>
                                 <div class="klipper-param-desc">Hz/ms 증가율 (클수록 가파름)</div>
                                 <div class="klipper-param-input-row">
                                     <input type="number" id="kp-accel" class="klipper-param-input"
@@ -641,7 +713,7 @@
                             </div>
 
                             <div class="klipper-param-card">
-                                <div class="klipper-param-title">펄스 폭 (μs)</div>
+                                <div class="klipper-param-title">펄스 폭</div>
                                 <div class="klipper-param-desc">DM542 PUL 최소 2.5μs</div>
                                 <div class="klipper-param-input-row">
                                     <input type="number" id="kp-pulseus" class="klipper-param-input"
@@ -651,7 +723,7 @@
                             </div>
 
                             <div class="klipper-param-card">
-                                <div class="klipper-param-title">제어 방향 반전</div>
+                                <div class="klipper-param-title">방향 반전</div>
                                 <div class="klipper-param-desc">M1/M2 DIR 신호 반전</div>
                                 <div class="cfg-toggle-row" style="margin-top:6px;">
                                     <span class="cfg-toggle-label" style="font-size:11px;">M1</span>
@@ -866,63 +938,34 @@
         <div id="joystick-stick"></div>
     </div>
 
-    <!-- 개별 플로팅 원점 / E-STOP 버튼 -->
-    <div id="corner-sethome">
-        <button id="quick-sethome-btn" class="control-circle control-circle-accent" aria-label="Set Home">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                <polyline points="9 22 9 12 15 12 15 22"></polyline>
-            </svg>
-        </button>
-        <span class="corner-btn-label">원점</span>
-    </div>
-
-    <div id="corner-estop">
-        <button id="quick-estop-btn" class="control-circle control-circle-danger" aria-label="Emergency Stop">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-            </svg>
-        </button>
-        <span class="corner-btn-label">E-STOP</span>
-    </div>
-
-    <!-- Apple 스타일 하단 컨트롤 바 (3버튼 퀵액션) -->
+    <!-- Apple 스타일 하단 컨트롤 바 (우측/하단 결합) -->
     <div id="bottom-controls">
-        <!-- 갤러리 버튼 -->
-        <div class="bottom-btn-wrap">
-            <button id="gallery-btn" class="control-circle" aria-label="Open Gallery">
-                <img id="gallery-thumb" src="" alt="Last capture" style="display:none;">
-                <div id="gallery-empty-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                        <polyline points="21 15 16 10 5 21"></polyline>
-                    </svg>
-                </div>
-            </button>
-            <span class="bottom-btn-label">갤러리</span>
-        </div>
+        <!-- 갤러리 썸네일 버튼 (좌측) -->
+        <button id="gallery-btn" class="control-circle" aria-label="Open Gallery">
+            <img id="gallery-thumb" src="" alt="Last capture" style="display:none;">
+            <div id="gallery-empty-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+            </div>
+        </button>
 
         <!-- 셔터 캡처 버튼 (중앙) -->
-        <div class="bottom-btn-wrap">
-            <button id="btn-capture" class="shutter-btn" aria-label="Capture Photo">
-                <span class="shutter-inner"></span>
-            </button>
-            <span class="bottom-btn-label">촬영</span>
-        </div>
+        <button id="btn-capture" class="shutter-btn" aria-label="Capture Photo">
+            <span class="shutter-inner"></span>
+        </button>
 
-        <!-- 좌우 반전 버튼 -->
-        <div class="bottom-btn-wrap">
-            <button id="btn-flip" class="control-circle" aria-label="Flip Camera">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17 1l4 4-4 4"></path>
-                    <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
-                    <path d="M7 23l-4-4 4-4"></path>
-                    <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
-                </svg>
-            </button>
-            <span class="bottom-btn-label">반전</span>
-        </div>
+        <!-- 좌우 반전 버튼 (우측) -->
+        <button id="btn-flip" class="control-circle" aria-label="Flip Camera">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 1l4 4-4 4"></path>
+                <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                <path d="M7 23l-4-4 4-4"></path>
+                <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+            </svg>
+        </button>
     </div>
 
 </div>

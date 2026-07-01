@@ -513,18 +513,13 @@ function loop(timestamp){
                 // 조준점 반응 속도(maxSpeed: 1~20)에 비례한 가속도 제한 (급발진 방지)
                 const maxDelta = 0.04 + (maxSpeed * 0.005);
                 
-                if (targetJoyX === 0 && targetJoyY === 0) {
-                    joySendX = 0;
-                    joySendY = 0;
-                } else {
-                    if (targetJoyX > joySendX + maxDelta) joySendX += maxDelta;
-                    else if (targetJoyX < joySendX - maxDelta) joySendX -= maxDelta;
-                    else joySendX = targetJoyX;
-                    
-                    if (targetJoyY > joySendY + maxDelta) joySendY += maxDelta;
-                    else if (targetJoyY < joySendY - maxDelta) joySendY -= maxDelta;
-                    else joySendY = targetJoyY;
-                }
+                if (targetJoyX > joySendX + maxDelta) joySendX += maxDelta;
+                else if (targetJoyX < joySendX - maxDelta) joySendX -= maxDelta;
+                else joySendX = targetJoyX;
+                
+                if (targetJoyY > joySendY + maxDelta) joySendY += maxDelta;
+                else if (targetJoyY < joySendY - maxDelta) joySendY -= maxDelta;
+                else joySendY = targetJoyY;
 
                 if (targetJoyX === 0 && targetJoyY === 0 && Math.abs(joySendX) < 0.001 && Math.abs(joySendY) < 0.001) {
                     joySendX = 0;
@@ -2578,69 +2573,3 @@ if (btnStartUpload) {
         }
     });
 })();
-
-// ═══════════════════════════════════════════════════════════════
-//  퀵 바텀 키 핸들러 (Quick Bottom Bar Buttons)
-// ═══════════════════════════════════════════════════════════════
-
-// Quick SET HOME 버튼
-const quickSethomeBtn = document.getElementById('quick-sethome-btn');
-if (quickSethomeBtn) {
-    quickSethomeBtn.addEventListener('click', async () => {
-        try {
-            await fetch('/esp32_sethome');
-            showToast('🏠 원점 설정 완료', 'success');
-            // 계기판 가우지도 수동 동기화
-            if (typeof klipperPosM1 !== 'undefined') {
-                klipperPosM1 = 0.0;
-                klipperPosM2 = 0.0;
-            }
-        } catch(e) {
-            showToast('❌ 연결 없음', 'error');
-        }
-    });
-}
-
-// Quick AI 토글 버튼
-const quickAiBtn = document.getElementById('quick-ai-btn');
-const quickAiLabel = document.getElementById('quick-ai-label');
-
-function _updateQuickAiBtn(mode) {
-    if (!quickAiBtn || !quickAiLabel) return;
-    const isAuto = (mode === 'auto');
-    quickAiBtn.classList.toggle('ai-active', isAuto);
-    quickAiLabel.textContent = isAuto ? 'AI 추적' : '수동';
-    quickAiLabel.classList.toggle('ai-active', isAuto);
-}
-
-if (quickAiBtn) {
-    quickAiBtn.addEventListener('click', () => {
-        const newMode = (inputMode === 'auto') ? 'joystick' : 'auto';
-        setInputModeUI(newMode);
-        fetch('/set_input_mode?mode=' + newMode).catch(() => {});
-        _updateQuickAiBtn(newMode);
-    });
-}
-
-// setInputModeUI 호출 시 퀵 버튼도 동기화
-const _origSetInputModeUI = setInputModeUI;
-window.setInputModeUI = function(mode) {
-    _origSetInputModeUI(mode);
-    _updateQuickAiBtn(mode);
-};
-
-// 조이스틱 비활성 시적 피드백 강화
-// AI 모드일 때 조이스틱 브레이스를 더 선명하게 흐릿하게 표시
-(function() {
-    const joystickBase = document.getElementById('joystick-base');
-    if (!joystickBase) return;
-    const observer = new MutationObserver(() => {
-        const isAuto = joystickBase.style.opacity === '0';
-        joystickBase.style.transition = 'opacity 0.3s ease, filter 0.3s ease';
-        joystickBase.style.filter = isAuto ? 'blur(2px) brightness(0.4)' : '';
-    });
-    observer.observe(joystickBase, { attributes: true, attributeFilter: ['style'] });
-})();
-
-// 실행 시 퀵 버튼 초기 상태 동기화
-_updateQuickAiBtn(inputMode || 'joystick');
