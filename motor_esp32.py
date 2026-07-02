@@ -137,16 +137,20 @@ def _send(cmd: str):
 
 def _parse_status(line: str):
     """POS: / VER: 피드백 파싱."""
-    # ── 펌웨어 버전 수신 ──────────────────────────────────────────
+    # ── 버전 확인 ──────────────────────────────────────────
     if line.startswith("VER:"):
         actual = line[4:].strip()
         state.firmware_version_actual = actual
         state.firmware_mismatch = (actual != state.EXPECTED_FIRMWARE_VERSION)
         if state.firmware_mismatch:
-            print(f"[esp32] ⚠️ 펌웨어 버전 불일치! "
-                  f"연결됨={actual!r}, 기대={state.EXPECTED_FIRMWARE_VERSION!r}")
+            err_msg = (f"\n[esp32] ⚠️ 펌웨어 버전 불일치 치명적 오류!\n"
+                       f"연결됨='{actual}', 기대='{state.EXPECTED_FIRMWARE_VERSION}'\n"
+                       f"펌웨어를 업데이트하거나 코드를 수정하세요. 프로그램을 강제 종료합니다.\n")
+            print(err_msg)
+            import os
+            os._exit(1)
         else:
-            print(f"[esp32] ✅ 펌웨어 버저 확인: {actual}")
+            print(f"[esp32] ✅ 펌웨어 버전 확인: {actual}")
         return
 
     # ── 위치 피드백 ──────────────────────────────────────────

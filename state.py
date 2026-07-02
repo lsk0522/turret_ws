@@ -52,7 +52,7 @@ last_queued_target_m2 = 0.0
 
 # ── 펌웨어 버전 관리 ──────────────────────────────────────
 # 백엔드가 기대하는 ESP32 펌웨어 버전 (펌웨어 수정 시 이 값도 함께 올리세요)
-EXPECTED_FIRMWARE_VERSION = "2.0.6"
+EXPECTED_FIRMWARE_VERSION = "2.0.7"
 
 # 실제로 연결된 ESP32가 보고한 버전
 firmware_version_actual   = ""      # VER: 수신 전까지 빈 문자열
